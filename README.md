@@ -1,13 +1,15 @@
-# optix8_template
-This repository can be forked if you are planning on building something with Optix8. 
-This will compile the saxpy example from the RTX Compute Samples. If you would like
-to write your own RTX pipeline functions you can fork this repo and modify kernels.cu
-in the rtx folder.
+# Optix Splats
+This repo contains code for a differentiable gaussian renderer that leverages ray-tracing and OIT
+techniques to render gaussian splatted scenes. 
 
 ## Compilation
-You can compile this code with the following commands
+You can build the extension with
 ```
-mkdir build && cd build
-cmake .. -DOPTIX_HOME={"Path to Optix8"}
-make -j
+python setup.py install
+```
+
+You can test the install is functional by running the test script
+```
+cd test
+python saxpy_unit_tests.py
 ```
