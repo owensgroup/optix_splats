@@ -1,3 +1,6 @@
 /.vscode
 /build
 /lib
+_skbuild/
+/dist
+saxpy_cpp.egg-info/

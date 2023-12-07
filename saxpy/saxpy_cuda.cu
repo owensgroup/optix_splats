@@ -1,3 +1,5 @@
+#include <iostream>
+#include <torch/extension.h>
 #include <algorithm>
 #include <cmath>
 #include <fstream>
@@ -13,7 +15,7 @@
 #include <optix_function_table_definition.h>
 #include <optix_stubs.h>
 #include <optix_types.h>
-#define BUILD_DIR "./"
+#define BUILD_DIR "/home/teja/research/optix_splats/_skbuild/linux-x86_64-3.11/cmake-build"
 
 #define OPTIX_CHECK(error)                                                     \
   {                                                                            \
@@ -29,12 +31,19 @@
                 << cudaGetErrorString(error) << "'\n";                         \
   }
 
+#define CUDA_CHECK(error)                                                      \
+  {                                                                            \
+    if (error != cudaSuccess)                                                  \
+      std::cerr << __FILE__ << ":" << __LINE__ << " CUDA Error: '"             \
+                << cudaGetErrorString(error) << "'\n";                         \
+  }
+
 void optixLogCallback(unsigned int level, const char *tag, const char *message,
                       void *cbdata) {
   std::cout << "Optix Log[" << level << "][" << tag << "]: '" << message
             << "'\n";
 }
-void launch_saxpy_cuda(int N, float a, float *x, float *y);
+void launch_saxpy_cuda(int N, float a, float *x, float *y, float *z);
 
 std::string loadPtx(std::string filename) {
   std::ifstream ptx_in(filename);
@@ -47,6 +56,7 @@ struct SaxpyParameters {
   float a;
   float *x;
   float *y;
+  float *z;
 };
 
 OptixDeviceContext createOptixContext() {
@@ -67,8 +77,9 @@ OptixDeviceContext createOptixContext() {
 // load ptx and create module
 void loadSaxpyModule(OptixModule &module, OptixDeviceContext optix_context,
                      OptixPipelineCompileOptions &pipeline_compile_options) {
+  
   std::string ptx = loadPtx(BUILD_DIR "/ptx/kernels.ptx");
-
+  
   OptixModuleCompileOptions module_compile_options = {};
   module_compile_options.maxRegisterCount =
       OPTIX_COMPILE_DEFAULT_MAX_REGISTER_COUNT;
@@ -152,74 +163,34 @@ void populateSaxpySBT(OptixShaderBindingTable &sbt,
   sbt.hitgroupRecordCount = 1;
 }
 
-int main(int argc, char *argv[]) {
-  int N = 1 << 29;
-  float a = 2.0f;
-  std::vector<float> x(N, 1.0f);
-  std::vector<float> y(N, 2.0f);
-
-  // allocate device arrays using regular CUDA
-  float *device_x;
-  float *device_y;
-  CUDA_CHECK(cudaMalloc(&device_x, sizeof(float) * N));
-  CUDA_CHECK(cudaMalloc(&device_y, sizeof(float) * N));
-
-  CUDA_CHECK(cudaMemcpy(device_x, x.data(), sizeof(float) * x.size(),
-                        cudaMemcpyHostToDevice));
-  CUDA_CHECK(cudaMemcpy(device_y, y.data(), sizeof(float) * y.size(),
-                        cudaMemcpyHostToDevice));
-
-  // initialize OptiX context
-  OptixDeviceContext optix_context = createOptixContext();
-
-  // load ptx and create module
+void launch_saxpy_optix(int N, float a, float *x, float *y, float *z) {
+  OptixDeviceContext optix_context = createOptixContext(); 
   OptixPipelineCompileOptions pipeline_compile_options = {};
   OptixModule module = nullptr;
   loadSaxpyModule(module, optix_context, pipeline_compile_options);
 
-  // creat program groups
+
   OptixProgramGroup program_groups[3] = {};
   createSaxpyGroups(program_groups, optix_context, module);
 
-  // assemble program groups into pipeline
   OptixPipeline pipeline = nullptr;
   createSaxpyPipeline(pipeline, optix_context, program_groups,
                       pipeline_compile_options);
 
-  // setup shader binding table
   OptixShaderBindingTable sbt = {};
   populateSaxpySBT(sbt, program_groups);
 
-  // populate and move parameters to device
-  SaxpyParameters params{N, a, device_x, device_y};
+  
+  SaxpyParameters params{N, a, x, y, z};
   SaxpyParameters *device_params;
   CUDA_CHECK(cudaMalloc(&device_params, sizeof(SaxpyParameters)));
   CUDA_CHECK(cudaMemcpy(device_params, &params, sizeof(SaxpyParameters),
                         cudaMemcpyHostToDevice));
+  
 
-  // regular cuda kernel saxpy
-  launch_saxpy_cuda(N, 2.0f, device_x, device_y);
-
-  // restore y
-  CUDA_CHECK(cudaMemcpy(device_y, y.data(), sizeof(float) * y.size(),
-                        cudaMemcpyHostToDevice));
-
-  // optix launch saxpy
   OPTIX_CHECK(optixLaunch(pipeline, 0,
                           reinterpret_cast<CUdeviceptr>(device_params),
                           sizeof(SaxpyParameters), &sbt, N, 1, 1));
-
-  // copy back data
-  CUDA_CHECK(cudaMemcpy(y.data(), device_y, sizeof(float) * y.size(),
-                        cudaMemcpyDeviceToHost));
-
-  // check for differences
-  float maxError = 0.0f;
-  for (int i = 0; i < N; i++)
-    maxError = std::max(maxError, std::abs(y[i] - 4.0f));
-  std::cout << "Max error: " << maxError << std::endl;
-
-  // clean up
   OPTIX_CHECK(optixPipelineDestroy(pipeline));
   for (int i = 0; i < 3; ++i) {
     OPTIX_CHECK(optixProgramGroupDestroy(program_groups[i]));
@@ -229,8 +200,29 @@ int main(int argc, char *argv[]) {
 
   CUDA_CHECK(cudaFree(device_params));
   CUDA_CHECK(cudaFree(reinterpret_cast<void *>(sbt.raygenRecord)));
-  CUDA_CHECK(cudaFree(device_y));
-  CUDA_CHECK(cudaFree(device_x));
 
-  return 0;
+}
+__global__ void saxpy_kernel(int n, float a, float *x, float *y, float *z) {
+  int i = blockIdx.x * blockDim.x + threadIdx.x;
+  if (i < n)
+    z[i] = a * x[i] + y[i]; 
+}
+
+torch::Tensor saxpy(torch::Tensor x, torch::Tensor y, float a) {
+  int N = x.numel();
+  torch::Tensor z = torch::zeros_like(x);
+  launch_saxpy_cuda(N, a, x.data<float>(), y.data<float>(), z.data<float>());
+  return z;
+}
+
+torch::Tensor saxpy_optix(torch::Tensor x, torch::Tensor y, float a) {
+  int N = x.numel();
+  torch::Tensor z = torch::zeros_like(x);
+  launch_saxpy_optix(N, a, x.data_ptr<float>(), y.data_ptr<float>(), z.data_ptr<float>());
+  return z;
+}
+
+void launch_saxpy_cuda(int N, float a, float *x, float *y, float *z) {
+  saxpy_kernel<<<(N + 255) / 256, 256>>>(N, a, x, y, z);
+  CUDA_CHECK(cudaGetLastError());
 }
