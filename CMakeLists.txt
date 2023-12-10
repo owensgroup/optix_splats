@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.12)
 
-project(saxpy LANGUAGES C CXX CUDA)
+project(diff_gaussian_renderer LANGUAGES C CXX CUDA)
 find_package(PythonExtensions REQUIRED)
 set(CMAKE_CXX_STANDARD 17)
 enable_language(CUDA)
@@ -34,26 +34,27 @@ include(PTXUtilities)
 
 
 set(SOURCES
-    saxpy/saxpy.cpp
-    saxpy/saxpy_cuda.cu
+    diff_gaussian_renderer/renderer.cu
     )
 
 
-add_library(saxpy_ext MODULE ${SOURCES})
-add_ptx_targets(saxpy_ext kernels)
-python_extension_module(saxpy_ext)
+add_library(DiffGaussianRenderer MODULE ${SOURCES})
+add_ptx_targets(DiffGaussianRenderer kernels)
+python_extension_module(DiffGaussianRenderer)
 # set_target_properties(saxpy_ext PROPERTIES
 #                             CUDA_SEPARABLE_COMPILATION ON)
 # set_target_properties(saxpy_ext PROPERTIES CUDA_ARCHITECTURES 70)
 
-target_link_libraries(saxpy_ext cuda 
+target_link_libraries(DiffGaussianRenderer cuda 
     ${OptiX_LIBRARY}
     ${CUDA_LIBRARIES}   
     ${CMAKE_DL_LIBS}
     ${TORCH_LIBRARIES}
     ${TORCH_PYTHON_LIBRARY})
-target_include_directories(saxpy_ext PRIVATE ${TORCH_INCLUDE_DIRS})
+target_include_directories(DiffGaussianRenderer PRIVATE ${TORCH_INCLUDE_DIRS})
 
-install(TARGETS saxpy_ext LIBRARY DESTINATION saxpy)
+target_compile_options(DiffGaussianRenderer PRIVATE -Wall)
+
+install(TARGETS DiffGaussianRenderer LIBRARY DESTINATION diff_gaussian_renderer)
 
 
