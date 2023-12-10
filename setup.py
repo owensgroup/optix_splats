@@ -11,7 +11,7 @@ except ImportError:
 
 import torch
 torch_root = os.path.dirname(torch.__file__)
-optix_root = '/usr/local/NVIDIA-OptiX-SDK-7.6.0-linux64-x86_64'
+optix_root = '/usr/local/NVIDIA-OptiX-SDK-8.0.0-linux64-x86_64'
 setup(
     name="diff_gaussian_renderer",
     version="1.0.0",

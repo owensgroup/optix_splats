@@ -27,6 +27,7 @@ find_library(TORCH_PYTHON_LIBRARY torch_python PATH "${TORCH_INSTALL_PREFIX}/lib
 
 include_directories(
     ${OptiX8_INCLUDE_DIRS}
+    ${CMAKE_SOURCE_DIR}
     ${CMAKE_BINARY_DIR}
     ${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES})
 
@@ -35,6 +36,7 @@ include(PTXUtilities)
 
 set(SOURCES
     diff_gaussian_renderer/renderer.cu
+    sutil/Camera.cpp
     )
 
 
@@ -46,7 +48,7 @@ python_extension_module(DiffGaussianRenderer)
 # set_target_properties(saxpy_ext PROPERTIES CUDA_ARCHITECTURES 70)
 
 target_link_libraries(DiffGaussianRenderer cuda 
-    ${OptiX_LIBRARY}
+    ${OptiX8_LIBRARY}
     ${CUDA_LIBRARIES}   
     ${CMAKE_DL_LIBS}
     ${TORCH_LIBRARIES}

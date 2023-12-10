@@ -7,10 +7,13 @@
 #include <optix_function_table_definition.h>
 #include <optix_stubs.h>
 #include <optix_types.h>
+#include <optix_host.h>
+
+#include "sutil/Camera.h"
 
 struct Params
 {
-    int*  image;
+    uchar4*  image;
     unsigned int  image_width;
     unsigned int  image_height;
     float3   cam_eye;
@@ -83,7 +86,14 @@ OptixDeviceContext createOptixContext() {
   return optix_context;
 }
 
-
+void configureCamera( sutil::Camera& cam, const uint32_t width, const uint32_t height, const float camera_x, const float camera_y, const float camera_z )
+{
+    cam.setEye( {camera_x, camera_y, camera_z} );
+    cam.setLookat( {0.0f, 0.0f, 0.0f} );
+    cam.setUp( {0.0f, 1.0f, 3.0f} );
+    cam.setFovY( 45.0f );
+    cam.setAspectRatio( (float)width / (float)height );
+}
 
 std::string loadPtx(std::string filename) {
   std::ifstream ptx_in(filename);
@@ -91,7 +101,8 @@ std::string loadPtx(std::string filename) {
                      std::istreambuf_iterator<char>());
 }
 
-torch::Tensor render_gaussians(int image_height, int image_width) {
+torch::Tensor render_gaussians(int image_height, int image_width,
+                               float camera_x, float camera_y, float camera_z) {
     std::vector<float> vertex_buffer = {
         -0.5f, -0.5f, 0.0f,
         -0.5f,  0.5f, 0.0f,
@@ -201,9 +212,9 @@ torch::Tensor render_gaussians(int image_height, int image_width) {
     pipeline_compile_options.exceptionFlags = OPTIX_EXCEPTION_FLAG_NONE;
     pipeline_compile_options.pipelineLaunchParamsVariableName = "params";
 
-    OPTIX_CHECK(optixModuleCreate(context, &module_compile_options,
+    optixModuleCreate(context, &module_compile_options,
                                         &pipeline_compile_options, ptx.c_str(),
-                                        ptx.size(), nullptr, nullptr, &module));
+                                        ptx.size(), nullptr, nullptr, &module);
     
     OptixProgramGroup raygen_prog_group = nullptr;
     OptixProgramGroup miss_prog_group = nullptr;
@@ -312,8 +323,6 @@ torch::Tensor render_gaussians(int image_height, int image_width) {
         &hg_sbt,
         hitgroup_record_size,
         cudaMemcpyHostToDevice );
-
-    
     
     // The shader binding table struct we will populate
     OptixShaderBindingTable sbt = {};
@@ -326,16 +335,22 @@ torch::Tensor render_gaussians(int image_height, int image_width) {
     sbt.hitgroupRecordBase  = hitgroup_record;
     sbt.hitgroupRecordStrideInBytes = sizeof( HitGroupSbtRecord );
     sbt.hitgroupRecordCount  = 1;
+
+    sutil::Camera cam;
+    configureCamera( cam, image_width, image_height, camera_x, camera_y, camera_z);
     
     Params params;
     params.image_width = image_width;
     params.image_height = image_height;
+    params.cam_eye      = cam.eye();
+    params.handle = outputHandle;
+    cam.UVWFrame( params.cam_u, params.cam_v, params.cam_w );
 
     CUdeviceptr d_image;
     cudaMalloc( reinterpret_cast<void**>( &d_image ),
-        3 * image_width * image_height * sizeof( int ) );
+        image_width * image_height * sizeof( uchar4 ) );
 
-    params.image = (int*)d_image;
+    params.image = (uchar4*)d_image;
 
     CUdeviceptr d_param;
     cudaMalloc( reinterpret_cast<void**>( &d_param ), sizeof( Params ) );
@@ -355,11 +370,11 @@ torch::Tensor render_gaussians(int image_height, int image_width) {
       1 ));
     
     cudaDeviceSynchronize();
-    std::vector<int> im_host(3 * image_width * image_height, 0);
-    cudaMemcpy( im_host.data(), (void*)d_image, 3 * image_width * image_height * sizeof( int ), cudaMemcpyDeviceToHost );
+    std::vector<uchar4> im_host(image_width * image_height, {0, 0, 0, 0});
+    cudaMemcpy( im_host.data(), (void*)d_image, image_width * image_height * sizeof( uchar4 ), cudaMemcpyDeviceToHost );
     std::printf("im_host[0, 1 , 2]: %d %d %d\n", im_host[0], im_host[1], im_host[2]);
 
-    torch::Tensor image = torch::from_blob((void*)d_image, {image_height, image_width, 3}, torch::TensorOptions().dtype(torch::kInt32).device(torch::kCUDA));
+    torch::Tensor image = torch::from_blob((void*)d_image, {image_height, image_width}, torch::TensorOptions().dtype(torch::kInt32).device(torch::kCUDA));
     return image;
 }
 
