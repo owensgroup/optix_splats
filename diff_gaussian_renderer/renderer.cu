@@ -103,6 +103,7 @@ std::string loadPtx(std::string filename) {
 
 torch::Tensor render_gaussians(int image_height, int image_width,
                                float camera_x, float camera_y, float camera_z) {
+
     std::vector<float> vertex_buffer = {
         -0.5f, -0.5f, 0.0f,
         -0.5f,  0.5f, 0.0f,
@@ -168,12 +169,16 @@ torch::Tensor render_gaussians(int image_height, int image_width,
     cudaMalloc((void**)&d_output, bufferSizes.outputSizeInBytes);
     cudaMalloc((void**)&d_temp, bufferSizes.tempSizeInBytes);
 
-    OptixTraversableHandle outputHandle = 0;
-    std::cout << "Building acceleration structure" << std::endl;
+    OptixTraversableHandle outputHandle = 1;
+    std::cout << "Building gas acceleration structure" << std::endl;
+    // Build GAS Timer
+    std::chrono::high_resolution_clock::time_point build_gas_start = std::chrono::high_resolution_clock::now();
     OptixResult results = optixAccelBuild(context, streamDefault,
      &accelOptions, &buildInput, 1, d_temp,
      bufferSizes.tempSizeInBytes, d_output,
      bufferSizes.outputSizeInBytes, &outputHandle, nullptr, 0);
+     std::chrono::high_resolution_clock::time_point build_gas_end = std::chrono::high_resolution_clock::now();
+     std::cout << "Build gas time taken: " << std::chrono::duration_cast<std::chrono::milliseconds>(build_gas_end - build_gas_start).count() << " ms" << std::endl;
 
     if (results == OPTIX_SUCCESS) {
         std::cout << "Successfully built acceleration structure" << std::endl;
@@ -181,14 +186,59 @@ torch::Tensor render_gaussians(int image_height, int image_width,
         std::cout << "Failed to build acceleration structure" << std::endl;
     }
 
+    // Build instance acceleration structure
+    OptixInstance instance = {};
+    float transform[12] = {0.7071,-0.7071,0.0,0,0.7071,0.7071,0.0 ,0,0.0,0.0,1.0,0};
+    memcpy( instance.transform, transform, sizeof( float )*12 );
+    instance.instanceId = 0;
+    instance.visibilityMask = 255;
+    instance.sbtOffset = 0;
+    instance.flags = OPTIX_INSTANCE_FLAG_NONE;
+    instance.traversableHandle = outputHandle;
+
+    CUdeviceptr d_instance;
+    cudaMalloc( (void**) &d_instance, sizeof( OptixInstance ) );
+    cudaMemcpy( (void*)d_instance, &instance, 
+        sizeof( OptixInstance ), cudaMemcpyHostToDevice );
+
+    // Reset build input and bufferSizes
+    buildInput = {};
+    buildInput.type = OPTIX_BUILD_INPUT_TYPE_INSTANCES;
+    OptixBuildInputInstanceArray& instanceArray = buildInput.instanceArray;
+    instanceArray.instances = d_instance;
+    instanceArray.numInstances = 1;
+
+    optixAccelComputeMemoryUsage(context, &accelOptions,
+        &buildInput, 1, &bufferSizes);
+
+    std::cout << "Allocating memory" << std::endl;
+    CUdeviceptr d2_output;
+    CUdeviceptr d2_temp;
+
+    std::printf("output size: %llu\n", bufferSizes.outputSizeInBytes);
+    std::printf("temp size: %llu\n", bufferSizes.tempSizeInBytes);
+    cudaMalloc((void**)&d2_output, bufferSizes.outputSizeInBytes);
+    cudaMalloc((void**)&d2_temp, bufferSizes.tempSizeInBytes);
+
+    OptixTraversableHandle instanceHandle = 1;
+
+    std::cout << "Building instance acceleration structure" << std::endl;
+    // Build GAS Timer
+    std::chrono::high_resolution_clock::time_point build_ias_start = std::chrono::high_resolution_clock::now();
+    results = optixAccelBuild(context, streamDefault,
+     &accelOptions, &buildInput, 1, d2_temp,
+     bufferSizes.tempSizeInBytes, d2_output,
+     bufferSizes.outputSizeInBytes, &instanceHandle, nullptr, 0);
+    std::chrono::high_resolution_clock::time_point build_ias_end = std::chrono::high_resolution_clock::now();
+    std::cout << "Build ias time taken: " << std::chrono::duration_cast<std::chrono::milliseconds>(build_ias_end - build_ias_start).count() << " ms" << std::endl;
+
     OptixPipelineCompileOptions pipeline_compile_options = {};
     pipeline_compile_options.usesMotionBlur = false;
 
     // This option is important to ensure we compile code which is optimal
     // for our scene hierarchy. We use a single GAS – no instancing or
     // multi-level hierarchies
-    pipeline_compile_options.traversableGraphFlags =
-    OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_GAS;
+    //pipeline_compile_options.traversableGraphFlags = OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_GAS;
 
     // Our device code uses 3 payload registers (r,g,b output value)
     pipeline_compile_options.numPayloadValues = 3;
@@ -206,7 +256,7 @@ torch::Tensor render_gaussians(int image_height, int image_width,
 
     pipeline_compile_options.usesMotionBlur = false;
     pipeline_compile_options.traversableGraphFlags =
-        OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_GAS;
+        OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_LEVEL_INSTANCING;
     pipeline_compile_options.numPayloadValues = 3;
     pipeline_compile_options.numAttributeValues = 2; // 2 is the minimum
     pipeline_compile_options.exceptionFlags = OPTIX_EXCEPTION_FLAG_NONE;
@@ -343,7 +393,7 @@ torch::Tensor render_gaussians(int image_height, int image_width,
     params.image_width = image_width;
     params.image_height = image_height;
     params.cam_eye      = cam.eye();
-    params.handle = outputHandle;
+    params.handle = instanceHandle;
     cam.UVWFrame( params.cam_u, params.cam_v, params.cam_w );
 
     CUdeviceptr d_image;
@@ -360,6 +410,10 @@ torch::Tensor render_gaussians(int image_height, int image_width,
     
     CUstream stream = 0;
     CUDA_CHECK( cudaStreamCreate( &stream ) ); // 0 is the default stream
+
+        // start Timer
+    std::chrono::high_resolution_clock::time_point launch_start = std::chrono::high_resolution_clock::now();
+
     OPTIX_CHECK(optixLaunch( pipeline, 
       stream,   // Default CUDA stream
       d_param,
@@ -368,13 +422,25 @@ torch::Tensor render_gaussians(int image_height, int image_width,
       image_width,
       image_height,
       1 ));
+
+    cudaFree((void*)d_output);
+    cudaFree((void*)d_temp);
+    cudaFree((void*)d2_output);
+    cudaFree((void*)d2_temp);
     
     cudaDeviceSynchronize();
-    std::vector<uchar4> im_host(image_width * image_height, {0, 0, 0, 0});
-    cudaMemcpy( im_host.data(), (void*)d_image, image_width * image_height * sizeof( uchar4 ), cudaMemcpyDeviceToHost );
-    std::printf("im_host[0, 1 , 2]: %d %d %d\n", im_host[0], im_host[1], im_host[2]);
+    // std::vector<uchar4> im_host(image_width * image_height, {0, 0, 0, 0});
+    // cudaMemcpy( im_host.data(), (void*)d_image, image_width * image_height * sizeof( uchar4 ), cudaMemcpyDeviceToHost );
+    // std::printf("im_host[0, 1 , 2]: %d %d %d\n", im_host[0], im_host[1], im_host[2]);
 
     torch::Tensor image = torch::from_blob((void*)d_image, {image_height, image_width}, torch::TensorOptions().dtype(torch::kInt32).device(torch::kCUDA));
+    
+    // Stop timer
+    std::chrono::high_resolution_clock::time_point launch_end = std::chrono::high_resolution_clock::now();
+
+    // Compute the difference between the two times in milliseconds
+    auto launch_time_taken = std::chrono::duration_cast<std::chrono::milliseconds>(launch_end - launch_start).count();
+    std::cout << "Time taken for rendering: " << launch_time_taken << " ms" << std::endl;
     return image;
 }
 

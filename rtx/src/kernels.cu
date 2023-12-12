@@ -102,6 +102,7 @@ extern "C" __global__ void __raygen__rg()
     // // the camera location through the screen
     float3 ray_origin, ray_direction;
     computeRay( idx, dim, ray_origin, ray_direction );
+
     //ray_origin = make_float3(__int_as_float(dim.x), __int_as_float(dim.y), -5.0f);
     //ray_direction = make_float3(0.0f, 0.0f, 1.0f);
 
@@ -130,18 +131,80 @@ extern "C" __global__ void __raygen__rg()
     params.image[idx.y * params.image_width + idx.x] = make_color(result);
 }
 
+
+
+__device__ bool in_ellipsoid(float3 intersect_world, float3 center, float3 scale, float4 quaternion)
+{
+    // Translate the world point back to the origin
+    float3 translated = intersect_world - center;
+
+    // Rotate the point
+    // Get the rotation matrix from the quaternion
+    float3 R0;
+    float3 R1;
+    float3 R2;
+
+    R0.x = 1.0f - 2.0f * (quaternion.y * quaternion.y + quaternion.z * quaternion.z);
+    R0.y = 2.0f * (quaternion.x * quaternion.y - quaternion.z * quaternion.w);
+    R0.z = 2.0f * (quaternion.x * quaternion.z + quaternion.y * quaternion.w);
+
+    R1.x = 2.0f * (quaternion.x * quaternion.y + quaternion.z * quaternion.w);
+    R1.y = 1.0f - 2.0f * (quaternion.x * quaternion.x + quaternion.z * quaternion.z);
+    R1.z = 2.0f * (quaternion.y * quaternion.z - quaternion.x * quaternion.w);
+
+    R2.x = 2.0f * (quaternion.x * quaternion.z - quaternion.y * quaternion.w);
+    R2.y = 2.0f * (quaternion.y * quaternion.z + quaternion.x * quaternion.w);
+    R2.z = 1.0f - 2.0f * (quaternion.x * quaternion.x + quaternion.y * quaternion.y);
+
+    float3 rotated = make_float3(
+        R0.x * translated.x + R1.x * translated.y + R2.x * translated.z,
+        R0.y * translated.x + R1.y * translated.y + R2.y * translated.z,
+        R0.z * translated.x + R1.z * translated.y + R2.z * translated.z
+    );
+    
+    // Scale the point
+    float3 scaled = make_float3(rotated.x / scale.x, rotated.y / scale.y, rotated.z / scale.z);
+
+    // Check if the point lies within the unit sphere
+    return (scaled.x * scaled.x + scaled.y * scaled.y + scaled.z * scaled.z) <= 1.0f;
+}
+
 extern "C" __global__ void __closesthit__ch()
 {
     // When built-in triangle intersection is used, a number of fundamental 
     // attributes are provided by the OptiX API, including barycentric 
     // coordinates.
-    const float2 barycentrics = optixGetTriangleBarycentrics();
- 
-    // Convert to color and assign to our payload outputs.
-    const float3 c = make_float3( barycentrics.x, barycentrics.y, 1.0f ); 
-    optixSetPayload_0( __float_as_int( c.x ) );
-    optixSetPayload_1( __float_as_int( c.y ) );
-    optixSetPayload_2( __float_as_int( c.z ) );
+    float raytime = optixGetRayTmax();
+    float3 ray_direction = optixGetWorldRayDirection();
+    float3 ray_origin = optixGetWorldRayOrigin();
+    //printf("handle %d\n", params.handle); 
+
+    //printf("transform[0] = [%f, %f, %f, %f]\n", transform[4], transform[5], transform[6], transform[7]);
+
+    unsigned int n_transforms = optixGetTransformListSize();
+
+    const float4* transform = nullptr;
+    for (unsigned int i = 0; i < n_transforms; i++) {
+        OptixTraversableHandle transform_handle = optixGetTransformListHandle( i );
+        if( optixGetTransformTypeFromHandle( transform_handle )==OPTIX_TRANSFORM_TYPE_INSTANCE) {
+            transform =
+                optixGetInstanceInverseTransformFromHandle( transform_handle );
+        }
+    }
+    
+    float3 intersection_point_w = raytime * ray_direction + ray_origin;
+   
+    float3 center = make_float3(0.0f, 0.0f, 0.0f);
+    float3 scale = make_float3(0.5f, 0.5f, 0.5f);
+    float4 quaternion = make_float4(0.3f, 0.5f, 0.2f, 1.0f);
+    
+    if (in_ellipsoid(intersection_point_w, center, scale, quaternion)) {
+        optixSetPayload_0(__float_as_int(1.0f));
+    } else {
+        optixSetPayload_0(__float_as_int(0.3f));
+    }
+    optixSetPayload_1( __float_as_int( 0.0f ) );
+    optixSetPayload_2( __float_as_int( 0.0f ) );
 }
 
 static __forceinline__ __device__ void setPayload( float3 p )
