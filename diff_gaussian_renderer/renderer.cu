@@ -86,23 +86,325 @@ OptixDeviceContext createOptixContext() {
   return optix_context;
 }
 
-void configureCamera( sutil::Camera& cam, const uint32_t width, const uint32_t height, const float camera_x, const float camera_y, const float camera_z )
-{
-    cam.setEye( {camera_x, camera_y, camera_z} );
-    cam.setLookat( {0.0f, 0.0f, 0.0f} );
-    cam.setUp( {0.0f, 1.0f, 3.0f} );
-    cam.setFovY( 45.0f );
-    cam.setAspectRatio( (float)width / (float)height );
-}
-
 std::string loadPtx(std::string filename) {
   std::ifstream ptx_in(filename);
   return std::string((std::istreambuf_iterator<char>(ptx_in)),
                      std::istreambuf_iterator<char>());
 }
 
+struct State {
+    OptixDeviceContext context;
+    OptixTraversableHandle gas_handle;
+    OptixPipeline pipeline;
+    CUdeviceptr d_param;
+    CUdeviceptr d_image;
+    CUstream stream;
+    OptixShaderBindingTable sbt;
+};
+
+State createState() {
+    State state;
+//     std::vector<float> vertex_buffer = {
+//         -0.5f, -0.5f, 0.0f,
+//         -0.5f,  0.5f, 0.0f,
+//          0.5f, -0.5f, 0.0f,
+//          0.5f,  0.5f, 0.0f
+//     };
+
+//     std::vector<uint32_t> index_buffer = {
+//         0, 1, 2,
+//         1, 2, 3
+//     };
+//     std::cout << "Allocating vertex buffer" << std::endl;
+//     CUdeviceptr vertex_device;
+//     cudaMalloc((void**)&vertex_device, sizeof(float) * vertex_buffer.size());
+//     cudaMemcpy((void*)vertex_device, vertex_buffer.data(), sizeof(float) * vertex_buffer.size(), cudaMemcpyHostToDevice);
+
+//     CUdeviceptr index_device;
+//     cudaMalloc((void**)&index_device, sizeof(uint32_t) * index_buffer.size());
+//     cudaMemcpy((void*)index_device, index_buffer.data(), sizeof(uint32_t) * index_buffer.size(), cudaMemcpyHostToDevice);
+
+
+//     std::cout << "Creating optix context" << std::endl;
+//     OptixDeviceContext context = createOptixContext();
+
+//     const uint32_t triangle_input_flags[1] = { OPTIX_GEOMETRY_FLAG_NONE };
+
+//     std::cout << "Creating build input" << std::endl;
+//     OptixBuildInput buildInput = {};
+//     buildInput.type = OPTIX_BUILD_INPUT_TYPE_TRIANGLES;
+//     // Create optix build input for triangles
+//     OptixBuildInputTriangleArray& triangleArray = buildInput.triangleArray;
+//     triangleArray.vertexBuffers = &vertex_device;
+//     triangleArray.numVertices = vertex_buffer.size();
+//     triangleArray.vertexFormat = OPTIX_VERTEX_FORMAT_FLOAT3;
+//     triangleArray.vertexStrideInBytes = sizeof(float) * 3;
+//     triangleArray.indexBuffer = index_device;
+//     triangleArray.numIndexTriplets = index_buffer.size() / 3;
+//     triangleArray.indexFormat = OPTIX_INDICES_FORMAT_UNSIGNED_INT3; 
+//     triangleArray.indexStrideInBytes = sizeof(int) * 3;
+//     triangleArray.preTransform = 0;
+//     triangleArray.numSbtRecords = 1;
+//     triangleArray.flags = triangle_input_flags;
+
+//     cudaStream_t streamDefault  = 0;
+//     OptixAccelBuildOptions accelOptions = {};
+//     accelOptions.buildFlags = OPTIX_BUILD_FLAG_NONE;
+//     accelOptions.operation = OPTIX_BUILD_OPERATION_BUILD;
+
+//     std::cout << "Computing memory usage" << std::endl;
+//     OptixAccelBufferSizes bufferSizes = {};
+//     optixAccelComputeMemoryUsage(context, &accelOptions,
+//         &buildInput, 1, &bufferSizes);
+
+//     std::cout << "Allocating memory" << std::endl;
+//     CUdeviceptr d_output;
+//     CUdeviceptr d_temp;
+
+//     std::printf("output size: %llu\n", bufferSizes.outputSizeInBytes);
+//     std::printf("temp size: %llu\n", bufferSizes.tempSizeInBytes);
+//     cudaMalloc((void**)&d_output, bufferSizes.outputSizeInBytes);
+//     cudaMalloc((void**)&d_temp, bufferSizes.tempSizeInBytes);
+
+//     OptixTraversableHandle outputHandle = 1;
+//     std::cout << "Building gas acceleration structure" << std::endl;
+//     // Build GAS Timer
+//     std::chrono::high_resolution_clock::time_point build_gas_start = std::chrono::high_resolution_clock::now();
+//     OptixResult results = optixAccelBuild(context, streamDefault,
+//      &accelOptions, &buildInput, 1, d_temp,
+//      bufferSizes.tempSizeInBytes, d_output,
+//      bufferSizes.outputSizeInBytes, &outputHandle, nullptr, 0);
+//      std::chrono::high_resolution_clock::time_point build_gas_end = std::chrono::high_resolution_clock::now();
+//      std::cout << "Build gas time taken: " << std::chrono::duration_cast<std::chrono::milliseconds>(build_gas_end - build_gas_start).count() << " ms" << std::endl;
+
+//     if (results == OPTIX_SUCCESS) {
+//         std::cout << "Successfully built acceleration structure" << std::endl;
+//     } else {
+//         std::cout << "Failed to build acceleration structure" << std::endl;
+//     }
+
+
+//     OptixInstance instance = {};
+//     //float transform[12] = {0.7071,-0.7071,0.0,0,0.7071,0.7071,0.0 ,0,0.0,0.0,1.0,0};
+//     float transform[12] = {
+//     1.0f,      0.0f,       0.0f, 0.0f, // First row
+//     0.0f,  1.0f, 0.0f, 0.0f,// Second row
+//     0.0f,  0.0f,  1.0f, 0.0f // Third row
+// };
+//     memcpy( instance.transform, transform, sizeof( float )*12 );
+//     instance.instanceId = 0;
+//     instance.visibilityMask = 255;
+//     instance.sbtOffset = 0;
+//     instance.flags = OPTIX_INSTANCE_FLAG_NONE;
+//     instance.traversableHandle = outputHandle;
+
+//     CUdeviceptr d_instance;
+//     cudaMalloc( (void**) &d_instance, sizeof( OptixInstance ) );
+//     cudaMemcpy( (void*)d_instance, &instance, 
+//         sizeof( OptixInstance ), cudaMemcpyHostToDevice );
+
+//     // Reset build input and bufferSizes
+    
+//     buildInput.type = OPTIX_BUILD_INPUT_TYPE_INSTANCES;
+//     OptixBuildInputInstanceArray& instanceArray = buildInput.instanceArray;
+//     instanceArray.instances = d_instance;
+//     instanceArray.numInstances = 1;
+
+    
+//     accelOptions.buildFlags = OPTIX_BUILD_FLAG_NONE;
+//     accelOptions.operation = OPTIX_BUILD_OPERATION_BUILD;
+
+    
+//     optixAccelComputeMemoryUsage(state.context, &accelOptions,
+//         &buildInput, 1, &bufferSizes);
+
+//     CUdeviceptr d2_output;
+//     CUdeviceptr d2_temp;
+
+//     cudaMalloc((void**)&d2_output, bufferSizes.outputSizeInBytes);
+//     cudaMalloc((void**)&d2_temp, bufferSizes.tempSizeInBytes);
+
+//     OptixTraversableHandle instanceHandle = 1;
+
+//     OptixResult results2 = optixAccelBuild(state.context, state.stream,
+//      &accelOptions, &buildInput, 1, d2_temp,
+//      bufferSizes.tempSizeInBytes, d2_output,
+//      bufferSizes.outputSizeInBytes, &instanceHandle, nullptr, 0);
+    
+//     OptixPipelineCompileOptions pipeline_compile_options = {};
+//     pipeline_compile_options.usesMotionBlur = false;
+
+//     // This option is important to ensure we compile code which is optimal
+//     // for our scene hierarchy. We use a single GAS – no instancing or
+//     // multi-level hierarchies
+//     //pipeline_compile_options.traversableGraphFlags = OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_GAS;
+
+//     // Our device code uses 3 payload registers (r,g,b output value)
+//     pipeline_compile_options.numPayloadValues = 3;
+
+//     // This is the name of the param struct variable in our device code
+//     pipeline_compile_options.pipelineLaunchParamsVariableName = "params";
+    
+//     std::string ptx = loadPtx("/home/teja/research/optix_splats/_skbuild/linux-x86_64-3.11/cmake-build/ptx/kernels.ptx");
+//     OptixModule module = nullptr;
+//     OptixModuleCompileOptions module_compile_options = {};
+//     module_compile_options.maxRegisterCount =
+//         OPTIX_COMPILE_DEFAULT_MAX_REGISTER_COUNT;
+//     module_compile_options.optLevel = OPTIX_COMPILE_OPTIMIZATION_DEFAULT;
+//     module_compile_options.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_MODERATE;
+
+//     pipeline_compile_options.usesMotionBlur = false;
+//     pipeline_compile_options.traversableGraphFlags =
+//         OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_LEVEL_INSTANCING;
+//     pipeline_compile_options.numPayloadValues = 3;
+//     pipeline_compile_options.numAttributeValues = 2; // 2 is the minimum
+//     pipeline_compile_options.exceptionFlags = OPTIX_EXCEPTION_FLAG_NONE;
+//     pipeline_compile_options.pipelineLaunchParamsVariableName = "params";
+
+//     optixModuleCreate(context, &module_compile_options,
+//                                         &pipeline_compile_options, ptx.c_str(),
+//                                         ptx.size(), nullptr, nullptr, &module);
+    
+//     OptixProgramGroup raygen_prog_group = nullptr;
+//     OptixProgramGroup miss_prog_group = nullptr;
+//     OptixProgramGroup hitgroup_prog_group = nullptr;
+
+//     OptixProgramGroupOptions program_group_options = {}; 
+//     OptixProgramGroupDesc raygen_prog_group_desc = {};
+//     raygen_prog_group_desc.kind = OPTIX_PROGRAM_GROUP_KIND_RAYGEN;
+//     raygen_prog_group_desc.raygen.module = module;
+//     raygen_prog_group_desc.raygen.entryFunctionName = "__raygen__rg";
+//     optixProgramGroupCreate(
+//         context,
+//         &raygen_prog_group_desc,
+//         1, // num program groups
+//         &program_group_options,
+//         nullptr,
+//         nullptr,
+//         &raygen_prog_group );
+    
+//     OptixProgramGroupDesc miss_prog_group_desc = {};
+//     miss_prog_group_desc.kind = OPTIX_PROGRAM_GROUP_KIND_MISS;
+//     miss_prog_group_desc.miss.module = module;
+//     miss_prog_group_desc.miss.entryFunctionName = "__miss__ms";
+//     optixProgramGroupCreate(
+//         context,
+//         &miss_prog_group_desc,
+//         1, // num program groups
+//         &program_group_options,
+//         nullptr,
+//         nullptr,
+//         &miss_prog_group );
+    
+//     OptixProgramGroupDesc hitgroup_prog_group_desc = {};
+//     hitgroup_prog_group_desc.kind = OPTIX_PROGRAM_GROUP_KIND_HITGROUP;
+//     hitgroup_prog_group_desc.hitgroup.moduleCH = module;
+//     hitgroup_prog_group_desc.hitgroup.entryFunctionNameCH = "__closesthit__ch";
+//     // We could also specify an any-hit and/or intersection program here
+//     optixProgramGroupCreate(
+//         context,
+//         &hitgroup_prog_group_desc,
+//         1, // num program groups
+//         &program_group_options,
+//         nullptr,
+//         nullptr,
+//         &hitgroup_prog_group );
+//     OptixProgramGroup program_groups[] = 
+//     { 
+//         raygen_prog_group, 
+//         miss_prog_group, 
+//         hitgroup_prog_group
+//     };
+    
+//     OptixPipelineLinkOptions pipeline_link_options = {};
+//     pipeline_link_options.maxTraceDepth = 1;
+
+//     OptixPipeline pipeline = nullptr;
+//     optixPipelineCreate(
+//         context,
+//         &pipeline_compile_options,
+//         &pipeline_link_options,
+//         program_groups,
+//         sizeof( program_groups ) / sizeof( program_groups[0] ),
+//         nullptr,
+//         nullptr,
+//         &pipeline );
+    
+//     // Allocate the miss record on the device 
+//     CUdeviceptr miss_record;
+//     size_t miss_record_size = sizeof( MissSbtRecord );
+//     cudaMalloc( reinterpret_cast<void**>( &miss_record ), miss_record_size );
+
+//     CUdeviceptr raygen_record;
+//     size_t raygen_record_size = sizeof( RayGenSbtRecord );
+//     cudaMalloc( reinterpret_cast<void**>( &raygen_record ), raygen_record_size );
+
+//     CUdeviceptr hitgroup_record;
+//     size_t hitgroup_record_size = sizeof( HitGroupSbtRecord );
+//     cudaMalloc( reinterpret_cast<void**>( &hitgroup_record ), hitgroup_record_size );
+
+//     // Populate host-side copy of the record with header and data
+//     MissSbtRecord ms_sbt;
+//     ms_sbt.data.bg_color = { 0.3f, 0.1f, 0.2f };
+//     optixSbtRecordPackHeader( miss_prog_group, &ms_sbt );
+
+//     RayGenSbtRecord rg_sbt;
+//     optixSbtRecordPackHeader( raygen_prog_group, &rg_sbt );
+
+//     HitGroupSbtRecord hg_sbt;
+//     optixSbtRecordPackHeader( hitgroup_prog_group, &hg_sbt );
+
+//     // Now copy our host record to the device
+//     cudaMemcpy(
+//         reinterpret_cast<void*>( miss_record ),
+//         &ms_sbt,
+//         miss_record_size,
+//         cudaMemcpyHostToDevice );
+    
+//     cudaMemcpy(
+//         reinterpret_cast<void*>( raygen_record ),
+//         &rg_sbt,
+//         raygen_record_size,
+//         cudaMemcpyHostToDevice );
+    
+//     cudaMemcpy(
+//         reinterpret_cast<void*>( hitgroup_record ),
+//         &hg_sbt,
+//         hitgroup_record_size,
+//         cudaMemcpyHostToDevice );
+    
+//     // The shader binding table struct we will populate
+//     OptixShaderBindingTable sbt = {};
+
+//     // Finally we specify how many records and how they are packed in memory
+//     sbt.raygenRecord  = raygen_record;
+//     sbt.missRecordBase  = miss_record;
+//     sbt.missRecordStrideInBytes = sizeof( MissSbtRecord ); 
+//     sbt.missRecordCount  = 1;
+//     sbt.hitgroupRecordBase  = hitgroup_record;
+//     sbt.hitgroupRecordStrideInBytes = sizeof( HitGroupSbtRecord );
+//     sbt.hitgroupRecordCount  = 1;
+
+//     CUdeviceptr d_param;
+//     cudaMalloc( reinterpret_cast<void**>( &d_param ), sizeof( Params ) );
+//     CUstream stream = 0;
+//     CUDA_CHECK( cudaStreamCreate( &stream ) ); 
+//     state.context = context;
+//     state.gas_handle = outputHandle;
+//     state.pipeline = pipeline;
+//     state.d_param = d_param;
+//     state.stream = stream;
+//     state.sbt = sbt;
+
+//     cudaFree((void*)d_temp);
+
+    return state;
+}
+
 torch::Tensor render_gaussians(int image_height, int image_width,
-                               float camera_x, float camera_y, float camera_z) {
+                               float camera_x, float camera_y, float camera_z,
+                               float lookat_x, float lookat_y, float lookat_z,
+                               float up_x, float up_y, float up_z) {
 
     std::vector<float> vertex_buffer = {
         -0.5f, -0.5f, 0.0f,
@@ -186,7 +488,6 @@ torch::Tensor render_gaussians(int image_height, int image_width,
         std::cout << "Failed to build acceleration structure" << std::endl;
     }
 
-    // Build instance acceleration structure
     OptixInstance instance = {};
     float transform[12] = {0.7071,-0.7071,0.0,0,0.7071,0.7071,0.0 ,0,0.0,0.0,1.0,0};
     memcpy( instance.transform, transform, sizeof( float )*12 );
@@ -384,10 +685,15 @@ torch::Tensor render_gaussians(int image_height, int image_width,
     sbt.missRecordCount  = 1;
     sbt.hitgroupRecordBase  = hitgroup_record;
     sbt.hitgroupRecordStrideInBytes = sizeof( HitGroupSbtRecord );
-    sbt.hitgroupRecordCount  = 1;
+    sbt.hitgroupRecordCount  = 1;   
 
     sutil::Camera cam;
-    configureCamera( cam, image_width, image_height, camera_x, camera_y, camera_z);
+    cam.setEye( {camera_x, camera_y, camera_z} );
+    cam.setLookat( {lookat_x, lookat_y, lookat_z} );
+    cam.setUp( {up_x, up_y, up_z} );
+    cam.setFovY( 45.0f );
+    cam.setAspectRatio( (float)image_width / (float)image_height );
+
     
     Params params;
     params.image_width = image_width;
@@ -409,9 +715,7 @@ torch::Tensor render_gaussians(int image_height, int image_width,
         cudaMemcpyHostToDevice );
     
     CUstream stream = 0;
-    CUDA_CHECK( cudaStreamCreate( &stream ) ); // 0 is the default stream
-
-        // start Timer
+    CUDA_CHECK( cudaStreamCreate( &stream ) );
     std::chrono::high_resolution_clock::time_point launch_start = std::chrono::high_resolution_clock::now();
 
     OPTIX_CHECK(optixLaunch( pipeline, 
@@ -422,16 +726,13 @@ torch::Tensor render_gaussians(int image_height, int image_width,
       image_width,
       image_height,
       1 ));
-
+    
     cudaFree((void*)d_output);
     cudaFree((void*)d_temp);
     cudaFree((void*)d2_output);
     cudaFree((void*)d2_temp);
-    
+
     cudaDeviceSynchronize();
-    // std::vector<uchar4> im_host(image_width * image_height, {0, 0, 0, 0});
-    // cudaMemcpy( im_host.data(), (void*)d_image, image_width * image_height * sizeof( uchar4 ), cudaMemcpyDeviceToHost );
-    // std::printf("im_host[0, 1 , 2]: %d %d %d\n", im_host[0], im_host[1], im_host[2]);
 
     torch::Tensor image = torch::from_blob((void*)d_image, {image_height, image_width}, torch::TensorOptions().dtype(torch::kInt32).device(torch::kCUDA));
     
@@ -440,10 +741,15 @@ torch::Tensor render_gaussians(int image_height, int image_width,
 
     // Compute the difference between the two times in milliseconds
     auto launch_time_taken = std::chrono::duration_cast<std::chrono::milliseconds>(launch_end - launch_start).count();
-    std::cout << "Time taken for rendering: " << launch_time_taken << " ms" << std::endl;
     return image;
 }
 
 PYBIND11_MODULE(DiffGaussianRenderer, m) {
+    py::class_<State>(m, "State")
+        .def(py::init<>());
+
+    // Bind the createState function
+    m.def("createState", &createState, "Create a new OptiX state");
+
     m.def("render_gaussians", &render_gaussians, "Render gaussians");
 }
