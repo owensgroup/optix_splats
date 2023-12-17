@@ -92,27 +92,45 @@ std::string loadPtx(std::string filename) {
                      std::istreambuf_iterator<char>());
 }
 
-struct State {
+class OptixState {
+public:
+
+    // Constructors
+    OptixState() {
+        init_context();
+    }
+
+    // Functions
+
+    // Variables
     OptixDeviceContext context;
-    OptixTraversableHandle gas_handle;
-    OptixPipeline pipeline;
-    CUdeviceptr d_param;
-    CUdeviceptr d_image;
-    CUstream stream;
-    OptixShaderBindingTable sbt;
+private:
+    void init_context() {
+        context = createOptixContext();
+    }
+
 };
+// struct State {
+//     OptixDeviceContext context;
+//     OptixTraversableHandle gas_handle;
+//     OptixPipeline pipeline;
+//     CUdeviceptr d_param;
+//     CUdeviceptr d_image;
+//     CUstream stream;
+//     OptixShaderBindingTable sbt;
+// };
 
-State createState() {
-    State state;
+// State createState() {
+//     State state;
 
 
-    return state;
-}
+//     return state;
+// }
 
 torch::Tensor render_gaussians(int image_height, int image_width,
                                float camera_x, float camera_y, float camera_z,
                                float lookat_x, float lookat_y, float lookat_z,
-                               float up_x, float up_y, float up_z, State state) {
+                               float up_x, float up_y, float up_z, OptixState state) {
 
     std::vector<float> vertex_buffer = {
         -0.5f, -0.5f, 0.0f,
@@ -130,7 +148,7 @@ torch::Tensor render_gaussians(int image_height, int image_width,
     std::cout << "Making image tensor height " << image_height << " width " << image_width << std::endl;
     // create torch tensor with size of image_height x image_width x 3 
     std::cout << "Creating optix context" << std::endl;
-    OptixDeviceContext context = createOptixContext();
+    OptixDeviceContext context = state.context;
 
     std::cout << "Allocating vertex buffer" << std::endl;
     CUdeviceptr vertex_device;
@@ -453,11 +471,8 @@ torch::Tensor render_gaussians(int image_height, int image_width,
 }
 
 PYBIND11_MODULE(DiffGaussianRenderer, m) {
-    py::class_<State>(m, "State")
+    py::class_<OptixState>(m, "OptixState")
         .def(py::init<>());
-
-    // Bind the createState function
-    m.def("createState", &createState, "Create a new OptiX state");
 
     m.def("render_gaussians", &render_gaussians, "Render gaussians");
 }
