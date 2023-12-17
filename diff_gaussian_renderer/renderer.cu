@@ -109,6 +109,9 @@ public:
         std::cout << "Building module" << std::endl;
         build_module();
 
+        std::cout << "Building pipeline and sbt" << std::endl;
+        build_pipeline_and_sbt();
+
         
     }
 
@@ -312,7 +315,7 @@ private:
                                             ptx.size(), nullptr, nullptr, &module);
     }
 
-    void build_pipeline() {
+    void build_pipeline_and_sbt() {
         OptixProgramGroup raygen_prog_group = nullptr;
         OptixProgramGroup miss_prog_group = nullptr;
         OptixProgramGroup hitgroup_prog_group = nullptr;
@@ -378,61 +381,62 @@ private:
             nullptr,
             &pipeline );
         
-        // CUdeviceptr miss_record;
-        // size_t miss_record_size = sizeof( MissSbtRecord );
-        // cudaMalloc( reinterpret_cast<void**>( &miss_record ), miss_record_size );
-
-        // CUdeviceptr raygen_record;
-        // size_t raygen_record_size = sizeof( RayGenSbtRecord );
-        // cudaMalloc( reinterpret_cast<void**>( &raygen_record ), raygen_record_size );
-
-        // CUdeviceptr hitgroup_record;
-        // size_t hitgroup_record_size = sizeof( HitGroupSbtRecord );
-        // cudaMalloc( reinterpret_cast<void**>( &hitgroup_record ), hitgroup_record_size );
-
-        // // Populate host-side copy of the record with header and data
-        // MissSbtRecord ms_sbt;
-        // ms_sbt.data.bg_color = { 0.3f, 0.1f, 0.2f };
-        // optixSbtRecordPackHeader( miss_prog_group, &ms_sbt );
-
-        // RayGenSbtRecord rg_sbt;
-        // optixSbtRecordPackHeader( raygen_prog_group, &rg_sbt );
-
-        // HitGroupSbtRecord hg_sbt;
-        // optixSbtRecordPackHeader( hitgroup_prog_group, &hg_sbt );
-
-        // // Now copy our host record to the device
-        // cudaMemcpy(
-        //     reinterpret_cast<void*>( miss_record ),
-        //     &ms_sbt,
-        //     miss_record_size,
-        //     cudaMemcpyHostToDevice );
-        
-        // cudaMemcpy(
-        //     reinterpret_cast<void*>( raygen_record ),
-        //     &rg_sbt,
-        //     raygen_record_size,
-        //     cudaMemcpyHostToDevice );
-        
-        // cudaMemcpy(
-        //     reinterpret_cast<void*>( hitgroup_record ),
-        //     &hg_sbt,
-        //     hitgroup_record_size,
-        //     cudaMemcpyHostToDevice );
-        
-        // // The shader binding table struct we will populate
-        // sbt = {};
-
-        // // Finally we specify how many records and how they are packed in memory
-        // sbt.raygenRecord  = raygen_record;
-        // sbt.missRecordBase  = miss_record;
-        // sbt.missRecordStrideInBytes = sizeof( MissSbtRecord ); 
-        // sbt.missRecordCount  = 1;
-        // sbt.hitgroupRecordBase  = hitgroup_record;
-        // sbt.hitgroupRecordStrideInBytes = sizeof( HitGroupSbtRecord );
-        // sbt.hitgroupRecordCount  = 1;
         
         
+        
+        CUdeviceptr miss_record;
+        size_t miss_record_size = sizeof( MissSbtRecord );
+        cudaMalloc( reinterpret_cast<void**>( &miss_record ), miss_record_size );
+
+        CUdeviceptr raygen_record;
+        size_t raygen_record_size = sizeof( RayGenSbtRecord );
+        cudaMalloc( reinterpret_cast<void**>( &raygen_record ), raygen_record_size );
+
+        CUdeviceptr hitgroup_record;
+        size_t hitgroup_record_size = sizeof( HitGroupSbtRecord );
+        cudaMalloc( reinterpret_cast<void**>( &hitgroup_record ), hitgroup_record_size );
+
+        // Populate host-side copy of the record with header and data
+        MissSbtRecord ms_sbt;
+        ms_sbt.data.bg_color = { 0.3f, 0.1f, 0.2f };
+        optixSbtRecordPackHeader( miss_prog_group, &ms_sbt );
+
+        RayGenSbtRecord rg_sbt;
+        optixSbtRecordPackHeader( raygen_prog_group, &rg_sbt );
+
+        HitGroupSbtRecord hg_sbt;
+        optixSbtRecordPackHeader( hitgroup_prog_group, &hg_sbt );
+
+        // Now copy our host record to the device
+        cudaMemcpy(
+            reinterpret_cast<void*>( miss_record ),
+            &ms_sbt,
+            miss_record_size,
+            cudaMemcpyHostToDevice );
+        
+        cudaMemcpy(
+            reinterpret_cast<void*>( raygen_record ),
+            &rg_sbt,
+            raygen_record_size,
+            cudaMemcpyHostToDevice );
+        
+        cudaMemcpy(
+            reinterpret_cast<void*>( hitgroup_record ),
+            &hg_sbt,
+            hitgroup_record_size,
+            cudaMemcpyHostToDevice );
+        
+        // The shader binding table struct we will populate
+        sbt = {};
+
+        // Finally we specify how many records and how they are packed in memory
+        sbt.raygenRecord  = raygen_record;
+        sbt.missRecordBase  = miss_record;
+        sbt.missRecordStrideInBytes = sizeof( MissSbtRecord ); 
+        sbt.missRecordCount  = 1;
+        sbt.hitgroupRecordBase  = hitgroup_record;
+        sbt.hitgroupRecordStrideInBytes = sizeof( HitGroupSbtRecord );
+        sbt.hitgroupRecordCount  = 1;
     }
 
     
@@ -460,129 +464,7 @@ torch::Tensor render_gaussians(int image_height, int image_width,
 
     OptixTraversableHandle instanceHandle = state.instanceHandle;
     OptixModule module = state.module;
-    
-
-    OptixProgramGroup raygen_prog_group = nullptr;
-    OptixProgramGroup miss_prog_group = nullptr;
-    OptixProgramGroup hitgroup_prog_group = nullptr;
-
-    OptixProgramGroupOptions program_group_options = {}; 
-    OptixProgramGroupDesc raygen_prog_group_desc = {};
-    raygen_prog_group_desc.kind = OPTIX_PROGRAM_GROUP_KIND_RAYGEN;
-    raygen_prog_group_desc.raygen.module = module;
-    raygen_prog_group_desc.raygen.entryFunctionName = "__raygen__rg";
-    optixProgramGroupCreate(
-        context,
-        &raygen_prog_group_desc,
-        1, // num program groups
-        &program_group_options,
-        nullptr,
-        nullptr,
-        &raygen_prog_group );
-    
-    OptixProgramGroupDesc miss_prog_group_desc = {};
-    miss_prog_group_desc.kind = OPTIX_PROGRAM_GROUP_KIND_MISS;
-    miss_prog_group_desc.miss.module = module;
-    miss_prog_group_desc.miss.entryFunctionName = "__miss__ms";
-    optixProgramGroupCreate(
-        context,
-        &miss_prog_group_desc,
-        1, // num program groups
-        &program_group_options,
-        nullptr,
-        nullptr,
-        &miss_prog_group );
-    
-    OptixProgramGroupDesc hitgroup_prog_group_desc = {};
-    hitgroup_prog_group_desc.kind = OPTIX_PROGRAM_GROUP_KIND_HITGROUP;
-    hitgroup_prog_group_desc.hitgroup.moduleCH = module;
-    hitgroup_prog_group_desc.hitgroup.entryFunctionNameCH = "__closesthit__ch";
-    // We could also specify an any-hit and/or intersection program here
-    optixProgramGroupCreate(
-        context,
-        &hitgroup_prog_group_desc,
-        1, // num program groups
-        &program_group_options,
-        nullptr,
-        nullptr,
-        &hitgroup_prog_group );
-    OptixProgramGroup program_groups[] = 
-    { 
-        raygen_prog_group, 
-        miss_prog_group, 
-        hitgroup_prog_group
-    };
-    
-    OptixPipelineLinkOptions pipeline_link_options = {};
-    pipeline_link_options.maxTraceDepth = 1;
-
-    OptixPipeline pipeline = nullptr;
-    optixPipelineCreate(
-        context,
-        &state.pipeline_compile_options,
-        &pipeline_link_options,
-        program_groups,
-        sizeof( program_groups ) / sizeof( program_groups[0] ),
-        nullptr,
-        nullptr,
-        &pipeline );
-    
-    
-    
-    
-    CUdeviceptr miss_record;
-    size_t miss_record_size = sizeof( MissSbtRecord );
-    cudaMalloc( reinterpret_cast<void**>( &miss_record ), miss_record_size );
-
-    CUdeviceptr raygen_record;
-    size_t raygen_record_size = sizeof( RayGenSbtRecord );
-    cudaMalloc( reinterpret_cast<void**>( &raygen_record ), raygen_record_size );
-
-    CUdeviceptr hitgroup_record;
-    size_t hitgroup_record_size = sizeof( HitGroupSbtRecord );
-    cudaMalloc( reinterpret_cast<void**>( &hitgroup_record ), hitgroup_record_size );
-
-    // Populate host-side copy of the record with header and data
-    MissSbtRecord ms_sbt;
-    ms_sbt.data.bg_color = { 0.3f, 0.1f, 0.2f };
-    optixSbtRecordPackHeader( miss_prog_group, &ms_sbt );
-
-    RayGenSbtRecord rg_sbt;
-    optixSbtRecordPackHeader( raygen_prog_group, &rg_sbt );
-
-    HitGroupSbtRecord hg_sbt;
-    optixSbtRecordPackHeader( hitgroup_prog_group, &hg_sbt );
-
-    // Now copy our host record to the device
-    cudaMemcpy(
-        reinterpret_cast<void*>( miss_record ),
-        &ms_sbt,
-        miss_record_size,
-        cudaMemcpyHostToDevice );
-    
-    cudaMemcpy(
-        reinterpret_cast<void*>( raygen_record ),
-        &rg_sbt,
-        raygen_record_size,
-        cudaMemcpyHostToDevice );
-    
-    cudaMemcpy(
-        reinterpret_cast<void*>( hitgroup_record ),
-        &hg_sbt,
-        hitgroup_record_size,
-        cudaMemcpyHostToDevice );
-    
-    // The shader binding table struct we will populate
-    OptixShaderBindingTable sbt = {};
-
-    // Finally we specify how many records and how they are packed in memory
-    sbt.raygenRecord  = raygen_record;
-    sbt.missRecordBase  = miss_record;
-    sbt.missRecordStrideInBytes = sizeof( MissSbtRecord ); 
-    sbt.missRecordCount  = 1;
-    sbt.hitgroupRecordBase  = hitgroup_record;
-    sbt.hitgroupRecordStrideInBytes = sizeof( HitGroupSbtRecord );
-    sbt.hitgroupRecordCount  = 1;   
+      
     
     sutil::Camera cam;
     cam.setEye( {camera_x, camera_y, camera_z} );
@@ -596,7 +478,7 @@ torch::Tensor render_gaussians(int image_height, int image_width,
     params.image_width = image_width;
     params.image_height = image_height;
     params.cam_eye      = cam.eye();
-    params.handle = instanceHandle;
+    params.handle = state.instanceHandle;
     cam.UVWFrame( params.cam_u, params.cam_v, params.cam_w );
 
     CUdeviceptr d_image;
@@ -615,11 +497,11 @@ torch::Tensor render_gaussians(int image_height, int image_width,
     CUDA_CHECK( cudaStreamCreate( &stream ) );
     std::chrono::high_resolution_clock::time_point launch_start = std::chrono::high_resolution_clock::now();
 
-    OPTIX_CHECK(optixLaunch( pipeline, 
+    OPTIX_CHECK(optixLaunch( state.pipeline, 
       stream,   // Default CUDA stream
       d_param,
       sizeof( Params ), 
-      &sbt,
+      &state.sbt,
       image_width,
       image_height,
       1 ));
