@@ -8,6 +8,9 @@ First install Anaconda. Then create an environment from the repo yaml
 conda env create -f environment.yml
 ```
 ### Compilation
+You first need to change the variable optix_root in setup.py to the
+path where optix is located on your machine.
+
 You can build the extension with
 ```
 python setup.py install
