@@ -1,6 +1,5 @@
 import torch
-import diff_gaussian_renderer
-from diff_gaussian_renderer import render_gaussians, create_state
+from diff_gaussian_renderer import render_gaussians, OptixState
 import matplotlib.pyplot as plt
 import torchvision.transforms as transforms
 
@@ -130,7 +129,7 @@ window = pygame.display.set_mode((width, height))
 pygame.display.set_caption('Pygame Window')
 # Main loop
 running = True
-state = create_state()
+state = OptixState()
 while running:
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
