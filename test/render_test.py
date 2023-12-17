@@ -42,14 +42,14 @@ def pil_image_to_pygame(pil_image):
 
 state = None
 def get_image(image_width, image_height, camera_position,
-              lookat, up):
-    global state
+              lookat, up, state):
+    
     # if state is None:
     #     print("CREATING STATE")
     #     state = create_state()
     render_start_time = time.time()
     a = render_gaussians(image_height, image_width, camera_position.x, camera_position.y, camera_position.z,
-                         lookat.x, lookat.y, lookat.z, up.x, up.y, up.z)
+                         lookat.x, lookat.y, lookat.z, up.x, up.y, up.z, state)
     r = ((a >> 24) & 0xFF).byte()
     g = ((a >> 16) & 0xFF).byte()
     b = ((a >> 8) & 0xFF).byte()
@@ -105,7 +105,7 @@ lookat = pygame.math.Vector3(0, 0, 0)
 up = pygame.math.Vector3(0, 1, 0)
 camera_position = camera.get_position()
 
-a = get_image(width, height, camera_position, lookat, up)
+# a = get_image(width, height, camera_position, lookat, up)
 # Display the image
 # im = ax.imshow(a)
 # fig.canvas.draw()
@@ -130,13 +130,14 @@ window = pygame.display.set_mode((width, height))
 pygame.display.set_caption('Pygame Window')
 # Main loop
 running = True
+state = create_state()
 while running:
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
         camera.handle_input(event)
     get_image_start = time.time()
-    a = get_image(width, height, camera.get_position(), lookat, up)
+    a = get_image(width, height, camera.get_position(), lookat, up, state)
     get_image_end = time.time()
 
     window.fill((0, 0, 0))
