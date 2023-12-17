@@ -110,7 +110,8 @@ public:
         build_module();
 
         std::cout << "Building pipeline and sbt" << std::endl;
-        build_pipeline_and_sbt();
+        // TODO: Change image width and height to be passed in
+        build_pipeline_and_sbt(2560, 1440);
 
         
     }
@@ -122,6 +123,7 @@ public:
     // }
 
     // Functions
+    // TODO: Refactor to build gaussians around multiple gaussians
     void build_ias() {
         OptixInstance instance = {};
         float transform[12] = {0.7071,-0.7071,0.0,0,0.7071,0.7071,0.0 ,0,0.0,0.0,1.0,0};
@@ -192,6 +194,7 @@ public:
 
     OptixPipeline pipeline;
 
+    CUdeviceptr d_image;
 
 private:
     void init_context() {
@@ -315,7 +318,7 @@ private:
                                             ptx.size(), nullptr, nullptr, &module);
     }
 
-    void build_pipeline_and_sbt() {
+    void build_pipeline_and_sbt(int image_width, int image_height) {
         OptixProgramGroup raygen_prog_group = nullptr;
         OptixProgramGroup miss_prog_group = nullptr;
         OptixProgramGroup hitgroup_prog_group = nullptr;
@@ -437,6 +440,10 @@ private:
         sbt.hitgroupRecordBase  = hitgroup_record;
         sbt.hitgroupRecordStrideInBytes = sizeof( HitGroupSbtRecord );
         sbt.hitgroupRecordCount  = 1;
+
+        
+        cudaMalloc( reinterpret_cast<void**>( &d_image ),
+            image_width * image_height * sizeof( uchar4 ) );
     }
 
     
@@ -481,11 +488,9 @@ torch::Tensor render_gaussians(int image_height, int image_width,
     params.handle = state.instanceHandle;
     cam.UVWFrame( params.cam_u, params.cam_v, params.cam_w );
 
-    CUdeviceptr d_image;
-    cudaMalloc( reinterpret_cast<void**>( &d_image ),
-        image_width * image_height * sizeof( uchar4 ) );
+    
 
-    params.image = (uchar4*)d_image;
+    params.image = (uchar4*)state.d_image;
 
     CUdeviceptr d_param;
     cudaMalloc( reinterpret_cast<void**>( &d_param ), sizeof( Params ) );
@@ -507,14 +512,9 @@ torch::Tensor render_gaussians(int image_height, int image_width,
       1 ));
     
     cudaFree( (void*)d_param );
-
-    
-    
-    
-
     cudaDeviceSynchronize();
 
-    torch::Tensor image = torch::from_blob((void*)d_image, {image_height, image_width}, torch::TensorOptions().dtype(torch::kInt32).device(torch::kCUDA));
+    torch::Tensor image = torch::from_blob((void*)state.d_image, {image_height, image_width}, torch::TensorOptions().dtype(torch::kInt32).device(torch::kCUDA));
     
     // Stop timer
     std::chrono::high_resolution_clock::time_point launch_end = std::chrono::high_resolution_clock::now();
