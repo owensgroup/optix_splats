@@ -5,3 +5,4 @@ _skbuild/
 /dist
 saxpy_cpp.egg-info/
 diff_gaussian_renderer.egg-info/
+test/example.ply
