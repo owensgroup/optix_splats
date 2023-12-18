@@ -1,5 +1,6 @@
 import torch
 from .DiffGaussianRenderer import render_gaussians as _render_gaussians
+from .DiffGaussianRenderer import handle_input as _handle_input
 from .DiffGaussianRenderer import OptixState
 
 __all__ = ['OptixState']
@@ -9,3 +10,6 @@ def render_gaussians(image_height: int, image_width: int,
                      lookat_x: float, lookat_y: float, lookat_z: float,
                      up_x: float, up_y: float, up_z: float, state: OptixState):
     return _render_gaussians(image_height, image_width, camera_x, camera_y, camera_z, lookat_x, lookat_y, lookat_z, up_x, up_y, up_z, state)
+
+def handle_input(state: OptixState):
+    return _handle_input(state)

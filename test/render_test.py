@@ -104,52 +104,13 @@ lookat = pygame.math.Vector3(0, 0, 0)
 up = pygame.math.Vector3(0, 1, 0)
 camera_position = camera.get_position()
 
-# a = get_image(width, height, camera_position, lookat, up)
-# Display the image
-# im = ax.imshow(a)
-# fig.canvas.draw()
-
-# # Define a callback function to update the image
-# def on_key(event):
-#     global zoom, a
-#     print('press', event.key)
-#     sys.stdout.flush()
-#     # Get the x, y coordinates of the click
-#     if event.key == 'up':
-#     if event.key == 'down':
-#         a = get_image(width, height, 0.0, 0.0, zoom)  # Set the entire image to red
-#         im.set_data(a)
-#         fig.canvas.draw()
-#         print(zoom)
-#         sys.stdout.flush()
-
-window = pygame.display.set_mode((width, height))
-
-# Set a title for the window
-pygame.display.set_caption('Pygame Window')
-# Main loop
-running = True
 state = OptixState()
+
+# # Main loop
+running = True
 while running:
-    for event in pygame.event.get():
-        if event.type == pygame.QUIT:
-            running = False
-        camera.handle_input(event)
-    get_image_start = time.time()
-    a = get_image(width, height, camera.get_position(), lookat, up, state)
-    get_image_end = time.time()
+    running = handle_input(state)
+    image_as_torch_view = render_image(state) # Get state of image as a pytorch view, only valid till next render_gaussians
 
-    window.fill((0, 0, 0))
-    window.blit(a, (0, 0))
-
-    fps = int(clock.get_fps())
-    fps_text = font.render(f'FPS: {fps}', True, pygame.Color('white'))
-    window.blit(fps_text, (10, 10))  # Position the FPS text at the top-left corner
-
-    # Update the display
-    pygame.display.flip()
-
-    clock.tick()
-
-# Quit Pygame
-pygame.quit()
+    # Do something with pytorch
+    print(image_as_torch_view.shape)

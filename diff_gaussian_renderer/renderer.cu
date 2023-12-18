@@ -9,7 +9,15 @@
 #include <optix_types.h>
 #include <optix_host.h>
 
+#include <glad/gl.h>
+#include <SDL.h>
+#include <SDL_opengl.h>
+
 #include "sutil/Camera.h"
+#include "sutil/Trackball.h"
+#include "sutil/GLDisplay.h"
+
+// Create SDL2 + OpenGL context
 
 struct Params
 {
@@ -113,7 +121,8 @@ public:
         // TODO: Change image width and height to be passed in
         build_pipeline_and_sbt(2560, 1440);
 
-        
+        std::cout << "Opening SDL2 Window" << std::endl;
+        init_sdl2();
     }
 
     // Destructors
@@ -196,9 +205,15 @@ public:
 
     CUdeviceptr d_image;
 
+    int image_width;
+    int image_height;
+
+    SDL_Window* window;
+    std::vector<uchar4> host_image;
+    GLuint pbo;
+
 private:
     void init_context() {
-        
         context = createOptixContext();
     }
 
@@ -444,51 +459,93 @@ private:
         
         cudaMalloc( reinterpret_cast<void**>( &d_image ),
             image_width * image_height * sizeof( uchar4 ) );
+
+        sutil::Trackball trackball;
+        sutil::Camera cam;
+        cam.setEye( {camera_x, camera_y, camera_z} );
+        cam.setLookat( {lookat_x, lookat_y, lookat_z} );
+        cam.setUp( {up_x, up_y, up_z} );
+        cam.setFovY( 45.0f );
+        cam.setAspectRatio( (float)image_width / (float)image_height );
+
+        trackball.set_camera(cam);
     }
-
-    
-    
-
 };
 
+void init_sdl2(OptixState& state) {
+    SDL_Init(SDL_INIT_VIDEO);
 
-torch::Tensor render_gaussians(int image_height, int image_width,
-                               float camera_x, float camera_y, float camera_z,
-                               float lookat_x, float lookat_y, float lookat_z,
-                               float up_x, float up_y, float up_z,
-                            //    float means_x, float means_y, float means_z,
-                            //    float scales_x, float scales_y, float scales_z,
-                            //    float rotations_a, float rotations_b, float rotations_c, float rotations_d, 
-                               OptixState state) {
+    SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 2);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
 
-    
-    
+    state.window = SDL_CreateWindow( "Splats",
+        SDL_WINDOWPOS_CENTERED,
+        SDL_WINDOWPOS_CENTERED,
+        2560, 1440,
+        SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN
+    );
 
+    state.ogl_context = SDL_GL_CreateContext(window);
+
+    int ogl_version = gladLoadGL((GLADloadfunc) SDL_GL_GetProcAddress);
+    printf("OpenGL %d.%d\n", GLAD_VERSION_MAJOR(ogl_version), GLAD_VERSION_MINOR(ogl_version));
+
+    // Setup the OpenGL image
+    state.host_image.resize(image_height * image_width);
+
+    GL_CHECK( glGenBuffers( 1, &state.pbo ) );
+    GL_CHECK( glBindBuffer( GL_ARRAY_BUFFER, state.pbo ) );
+    GL_CHECK( glBufferData( GL_ARRAY_BUFFER, sizeof(uchar4) * state.image_width * state.image_height,
+                            state.host_image.data, GL_STREAM_DRAW ) );
+    GL_CHECK( glBindBuffer( GL_ARRAY_BUFFER, 0 ) );
+}
+
+// Returns true while SDL window is still running.
+bool handle_input(OptixState& state) {
+    bool running = true;
+    SDL_Event event;
+    while(SDL_PollEvent(&event)) {
+        if (event.type == SDL_WINDOWEVENT) {
+            switch(event.window_event) {
+            case SDL_WINDOWEVENT_CLOSE:
+                window_closed = false;
+            }
+        }
+        if (event.type == SDL_MOUSEMOTION) {
+            if (event.state & SDL_BUTTON_LMASK) { // L mouse pressed
+                trackball.update_tracking(event.x, event.y, state.image_width, state.image_height);
+            }
+        }
+        if (event.type == SDL_MOUSEBUTTONDOWN) {
+            if (event.button == SDL_BUTTON_LEFT) {
+                trackball.start_tracking(event.x, event.y);
+            }
+        }
+    }
+
+    return window_closed;
+}
+
+
+torch::Tensor render_gaussians(OptixState& state) {
     std::cout << "Making image tensor height " << image_height << " width " << image_width << std::endl;
     // create torch tensor with size of image_height x image_width x 3 
     
+    int image_width =state.image_width;
+    int image_height = state.image_height;
     OptixDeviceContext context = state.context;
 
     OptixTraversableHandle instanceHandle = state.instanceHandle;
     OptixModule module = state.module;
-      
-    
-    sutil::Camera cam;
-    cam.setEye( {camera_x, camera_y, camera_z} );
-    cam.setLookat( {lookat_x, lookat_y, lookat_z} );
-    cam.setUp( {up_x, up_y, up_z} );
-    cam.setFovY( 45.0f );
-    cam.setAspectRatio( (float)image_width / (float)image_height );
-
     
     Params params;
     params.image_width = image_width;
     params.image_height = image_height;
-    params.cam_eye      = cam.eye();
+    params.cam_eye      = state.cam.eye();
     params.handle = state.instanceHandle;
-    cam.UVWFrame( params.cam_u, params.cam_v, params.cam_w );
-
-    
+    state.cam.UVWFrame( params.cam_u, params.cam_v, params.cam_w );
 
     params.image = (uchar4*)state.d_image;
 
@@ -515,13 +572,20 @@ torch::Tensor render_gaussians(int image_height, int image_width,
     cudaDeviceSynchronize();
 
     torch::Tensor image = torch::from_blob((void*)state.d_image, {image_height, image_width}, torch::TensorOptions().dtype(torch::kInt32).device(torch::kCUDA));
-    
+    cudaMemcpy(state.host_image.data(), state.d_image, cudaMemcpyDeviceToHost);
+
+    GL_CHECK( glBindBuffer( GL_ARRAY_BUFFER, state.pbo ) );
+    GL_CHECK( glBufferData( GL_ARRAY_BUFFER, sizeof(uchar4) * image_width * image_height,
+                            state.host_image.data(), GL_STREAM_DRAW ) );
+    state.display.display(image_width, image_height, image_width, image_height, state.pbo);
+
     // Stop timer
     std::chrono::high_resolution_clock::time_point launch_end = std::chrono::high_resolution_clock::now();
 
     // Compute the difference between the two times in milliseconds
     auto launch_time_taken = std::chrono::duration_cast<std::chrono::milliseconds>(launch_end - launch_start).count();
-    return image;
+
+    return image; // Only valid till next call
 }
 
 PYBIND11_MODULE(DiffGaussianRenderer, m) {
@@ -529,4 +593,5 @@ PYBIND11_MODULE(DiffGaussianRenderer, m) {
         .def(py::init<>());
 
     m.def("render_gaussians", &render_gaussians, "Render gaussians");
+    m.def("handle_input", &handle_input, "Handle SDL2 Input");
 }

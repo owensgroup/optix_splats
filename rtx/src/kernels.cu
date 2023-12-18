@@ -204,8 +204,6 @@ extern "C" __global__ void __closesthit__ch()
     float3 scale = make_float3(0.5f, 0.5f, 0.5f);
     float4 quaternion = make_float4(0.3f, 0.5f, 0.2f, 1.0f);
     
-    
-    
     if (in_ellipsoid(intersection_point_w, center, scale, transform)) {
         optixSetPayload_0(__float_as_int(1.0f));
     } else {

@@ -18,7 +18,8 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/CMake")
 
 set(CMAKE_CUDA_ARCHITECTURES 70)
 find_package(OptiX8 REQUIRED)
-
+find_package(SDL2 REQUIRED)
+find_package(OpenGL REQUIRED)
 
 set(CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS} ${TORCH_CXX_FLAGS})
 
@@ -29,16 +30,17 @@ include_directories(
     ${OptiX8_INCLUDE_DIRS}
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_BINARY_DIR}
-    ${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES})
+    ${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES}
+    ${SDL2_INCLUDE_DIRS})
 
 include(PTXUtilities)
-
 
 set(SOURCES
     diff_gaussian_renderer/renderer.cu
     sutil/Camera.cpp
+    sutil/Trackball.cpp
+    sutil/GLDisplay.cpp
     )
-
 
 add_library(DiffGaussianRenderer MODULE ${SOURCES})
 add_ptx_targets(DiffGaussianRenderer kernels)
@@ -52,7 +54,8 @@ target_link_libraries(DiffGaussianRenderer cuda
     ${CUDA_LIBRARIES}   
     ${CMAKE_DL_LIBS}
     ${TORCH_LIBRARIES}
-    ${TORCH_PYTHON_LIBRARY})
+    ${TORCH_PYTHON_LIBRARY}
+    ${SDL2_LIBRARIES})
 target_include_directories(DiffGaussianRenderer PRIVATE ${TORCH_INCLUDE_DIRS})
 
 target_compile_options(DiffGaussianRenderer PRIVATE -Wall)
