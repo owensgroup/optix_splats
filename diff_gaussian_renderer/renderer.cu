@@ -463,8 +463,6 @@ private:
         cudaMalloc( reinterpret_cast<void**>( &d_image ),
             image_width * image_height * sizeof( uchar4 ) );
 
-        sutil::Trackball trackball;
-        sutil::Camera cam;
         cam.setEye( {camera_x, camera_y, camera_z} );
         cam.setLookat( {lookat_x, lookat_y, lookat_z} );
         cam.setUp( {up_x, up_y, up_z} );
