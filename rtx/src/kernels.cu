@@ -189,7 +189,8 @@ extern "C" __global__ void __closesthit__ch()
     }
     
     float3 intersection_point_w = raytime * ray_direction + ray_origin;
-    
+    float3 scale = make_float3(0.5f, 0.5f, 0.5f);
+
     if (in_ellipsoid(intersection_point_w, scale, transform, inv_transform)) {
         optixSetPayload_0(__float_as_int(1.0f));
     } else {
