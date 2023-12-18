@@ -108,6 +108,9 @@ public:
         std::cout << "Creating optix context" << std::endl;
         init_context();
 
+        std::cout << "Opening SDL2 Window" << std::endl;
+        init_sdl2();
+
         std::cout << "Building gas" << std::endl;
         build_gas();
 
@@ -120,9 +123,6 @@ public:
         std::cout << "Building pipeline and sbt" << std::endl;
         // TODO: Change image width and height to be passed in
         build_pipeline_and_sbt(2560, 1440);
-
-        std::cout << "Opening SDL2 Window" << std::endl;
-        init_sdl2();
     }
 
     // Destructors
@@ -211,6 +211,7 @@ public:
     SDL_Window* window;
     std::vector<uchar4> host_image;
     GLuint pbo;
+    cudaGraphicsResource* pbo_cuda;
 
 private:
     void init_context() {
@@ -500,6 +501,8 @@ void init_sdl2(OptixState& state) {
     GL_CHECK( glBufferData( GL_ARRAY_BUFFER, sizeof(uchar4) * state.image_width * state.image_height,
                             state.host_image.data, GL_STREAM_DRAW ) );
     GL_CHECK( glBindBuffer( GL_ARRAY_BUFFER, 0 ) );
+
+    cudaGraphicsGLRegisterBuffer(&state.pbo_cuda, state.pbo, cudaGraphicsMapFlagsWriteDiscard);
 }
 
 // Returns true while SDL window is still running.
@@ -530,7 +533,7 @@ bool handle_input(OptixState& state) {
 
 
 torch::Tensor render_gaussians(OptixState& state) {
-    std::cout << "Making image tensor height " << image_height << " width " << image_width << std::endl;
+    // std::printf("Making image tensor height %d width %d\n", image_height, image_width);
     // create torch tensor with size of image_height x image_width x 3 
     
     int image_width =state.image_width;
@@ -547,7 +550,11 @@ torch::Tensor render_gaussians(OptixState& state) {
     params.handle = state.instanceHandle;
     state.cam.UVWFrame( params.cam_u, params.cam_v, params.cam_w );
 
-    params.image = (uchar4*)state.d_image;
+    cudaGraphicsMapResources(1, &state.pbo_cuda, 0);
+
+    size_t num_bytes_cuda;
+    cudaGraphicsResourceGetMappedPointer((void**)&params.image, &num_bytes_cuda, state.pbo_cuda);
+    // std::printf("%d bytes accessible in OpenGL buffer of %d expected\n", num_bytes_cuda, image_width * image_height * sizeof(uchar4));
 
     CUdeviceptr d_param;
     cudaMalloc( reinterpret_cast<void**>( &d_param ), sizeof( Params ) );
@@ -567,16 +574,13 @@ torch::Tensor render_gaussians(OptixState& state) {
       image_width,
       image_height,
       1 ));
-    
+
+    torch::Tensor image = torch::zeroes({image_height, image_width}, torch::TensorOptions().dtype(torch::kInt32).device(torch::kCUDA));
+    cudaMemcpy(image.data_ptr(), params.image, sizeof(uchar4) * image_height * image_width);
+
+    cudaGraphicsUnmapResources(1, &state.pbo_cuda, 0);
     cudaFree( (void*)d_param );
-    cudaDeviceSynchronize();
 
-    torch::Tensor image = torch::from_blob((void*)state.d_image, {image_height, image_width}, torch::TensorOptions().dtype(torch::kInt32).device(torch::kCUDA));
-    cudaMemcpy(state.host_image.data(), state.d_image, cudaMemcpyDeviceToHost);
-
-    GL_CHECK( glBindBuffer( GL_ARRAY_BUFFER, state.pbo ) );
-    GL_CHECK( glBufferData( GL_ARRAY_BUFFER, sizeof(uchar4) * image_width * image_height,
-                            state.host_image.data(), GL_STREAM_DRAW ) );
     state.display.display(image_width, image_height, image_width, image_height, state.pbo);
 
     // Stop timer
@@ -585,7 +589,7 @@ torch::Tensor render_gaussians(OptixState& state) {
     // Compute the difference between the two times in milliseconds
     auto launch_time_taken = std::chrono::duration_cast<std::chrono::milliseconds>(launch_end - launch_start).count();
 
-    return image; // Only valid till next call
+    return image;
 }
 
 PYBIND11_MODULE(DiffGaussianRenderer, m) {
