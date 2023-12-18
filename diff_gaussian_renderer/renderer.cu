@@ -17,6 +17,8 @@
 #include "sutil/Trackball.h"
 #include "sutil/GLDisplay.h"
 
+#include <cuda_gl_interop.h>
+
 // Create SDL2 + OpenGL context
 
 struct Params
@@ -209,7 +211,6 @@ public:
     int image_height;
 
     SDL_Window* window;
-    std::vector<uchar4> host_image;
     GLuint pbo;
     cudaGraphicsResource* pbo_cuda;
 
@@ -456,7 +457,6 @@ private:
         sbt.hitgroupRecordBase  = hitgroup_record;
         sbt.hitgroupRecordStrideInBytes = sizeof( HitGroupSbtRecord );
         sbt.hitgroupRecordCount  = 1;
-
         
         cudaMalloc( reinterpret_cast<void**>( &d_image ),
             image_width * image_height * sizeof( uchar4 ) );
@@ -494,14 +494,11 @@ void init_sdl2(OptixState& state) {
     printf("OpenGL %d.%d\n", GLAD_VERSION_MAJOR(ogl_version), GLAD_VERSION_MINOR(ogl_version));
 
     // Setup the OpenGL image
-    state.host_image.resize(image_height * image_width);
-
     GL_CHECK( glGenBuffers( 1, &state.pbo ) );
     GL_CHECK( glBindBuffer( GL_ARRAY_BUFFER, state.pbo ) );
     GL_CHECK( glBufferData( GL_ARRAY_BUFFER, sizeof(uchar4) * state.image_width * state.image_height,
-                            state.host_image.data, GL_STREAM_DRAW ) );
+                            nullptr, GL_STREAM_DRAW ) );
     GL_CHECK( glBindBuffer( GL_ARRAY_BUFFER, 0 ) );
-
     cudaGraphicsGLRegisterBuffer(&state.pbo_cuda, state.pbo, cudaGraphicsMapFlagsWriteDiscard);
 }
 
@@ -518,12 +515,12 @@ bool handle_input(OptixState& state) {
         }
         if (event.type == SDL_MOUSEMOTION) {
             if (event.state & SDL_BUTTON_LMASK) { // L mouse pressed
-                trackball.update_tracking(event.x, event.y, state.image_width, state.image_height);
+                state.trackball.update_tracking(event.x, event.y, state.image_width, state.image_height);
             }
         }
         if (event.type == SDL_MOUSEBUTTONDOWN) {
             if (event.button == SDL_BUTTON_LEFT) {
-                trackball.start_tracking(event.x, event.y);
+                state.trackball.start_tracking(event.x, event.y);
             }
         }
     }
@@ -579,16 +576,16 @@ torch::Tensor render_gaussians(OptixState& state) {
     cudaMemcpy(image.data_ptr(), params.image, sizeof(uchar4) * image_height * image_width);
 
     cudaGraphicsUnmapResources(1, &state.pbo_cuda, 0);
-    cudaFree( (void*)d_param );
 
     state.display.display(image_width, image_height, image_width, image_height, state.pbo);
 
     // Stop timer
     std::chrono::high_resolution_clock::time_point launch_end = std::chrono::high_resolution_clock::now();
 
+    cudaFree( (void*)d_param );
     // Compute the difference between the two times in milliseconds
     auto launch_time_taken = std::chrono::duration_cast<std::chrono::milliseconds>(launch_end - launch_start).count();
-
+    
     return image;
 }
 
