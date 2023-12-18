@@ -213,6 +213,8 @@ public:
     SDL_Window* window;
     GLuint pbo;
     cudaGraphicsResource* pbo_cuda;
+    sutil::Camera cam;
+    sutil::Trackball trackball;
 
 private:
     void init_context() {
