@@ -133,38 +133,38 @@ extern "C" __global__ void __raygen__rg()
 
 
 
-__device__ bool in_ellipsoid(float3 intersect_world, float3 center, float3 scale, const float4* transform)
+__device__ bool in_ellipsoid(float3 intersect_world, float3 center, float3 scale, float4 quaternion)
 {
     // Translate the world point back to the origin
     float3 translated = intersect_world - center;
 
-    // // Rotate the point
-    // // Get the rotation matrix from the quaternion
-    // float3 R0;
-    // float3 R1;
-    // float3 R2;
+    // Rotate the point
+    // Get the rotation matrix from the quaternion
+    float3 R0;
+    float3 R1;
+    float3 R2;
 
-    // R0.x = 1.0f - 2.0f * (quaternion.y * quaternion.y + quaternion.z * quaternion.z);
-    // R0.y = 2.0f * (quaternion.x * quaternion.y - quaternion.z * quaternion.w);
-    // R0.z = 2.0f * (quaternion.x * quaternion.z + quaternion.y * quaternion.w);
+    R0.x = 1.0f - 2.0f * (quaternion.y * quaternion.y + quaternion.z * quaternion.z);
+    R0.y = 2.0f * (quaternion.x * quaternion.y - quaternion.z * quaternion.w);
+    R0.z = 2.0f * (quaternion.x * quaternion.z + quaternion.y * quaternion.w);
 
-    // R1.x = 2.0f * (quaternion.x * quaternion.y + quaternion.z * quaternion.w);
-    // R1.y = 1.0f - 2.0f * (quaternion.x * quaternion.x + quaternion.z * quaternion.z);
-    // R1.z = 2.0f * (quaternion.y * quaternion.z - quaternion.x * quaternion.w);
+    R1.x = 2.0f * (quaternion.x * quaternion.y + quaternion.z * quaternion.w);
+    R1.y = 1.0f - 2.0f * (quaternion.x * quaternion.x + quaternion.z * quaternion.z);
+    R1.z = 2.0f * (quaternion.y * quaternion.z - quaternion.x * quaternion.w);
 
-    // R2.x = 2.0f * (quaternion.x * quaternion.z - quaternion.y * quaternion.w);
-    // R2.y = 2.0f * (quaternion.y * quaternion.z + quaternion.x * quaternion.w);
-    // R2.z = 1.0f - 2.0f * (quaternion.x * quaternion.x + quaternion.y * quaternion.y);
+    R2.x = 2.0f * (quaternion.x * quaternion.z - quaternion.y * quaternion.w);
+    R2.y = 2.0f * (quaternion.y * quaternion.z + quaternion.x * quaternion.w);
+    R2.z = 1.0f - 2.0f * (quaternion.x * quaternion.x + quaternion.y * quaternion.y);
 
-    // float3 rotated = make_float3(
-    //     R0.x * translated.x + R1.x * translated.y + R2.x * translated.z,
-    //     R0.y * translated.x + R1.y * translated.y + R2.y * translated.z,
-    //     R0.z * translated.x + R1.z * translated.y + R2.z * translated.z
-    // );
-    float3 rotated;
-    rotated.x = transform[0].x * translated.x + transform[0].y * translated.y + transform[0].z * translated.z + transform[0].w;
-    rotated.y = transform[1].x * translated.x + transform[1].y * translated.y + transform[1].z * translated.z + transform[1].w;
-    rotated.z = transform[2].x * translated.x + transform[2].y * translated.y + transform[2].z * translated.z + transform[2].w;
+    float3 rotated = make_float3(
+        R0.x * translated.x + R1.x * translated.y + R2.x * translated.z,
+        R0.y * translated.x + R1.y * translated.y + R2.y * translated.z,
+        R0.z * translated.x + R1.z * translated.y + R2.z * translated.z
+    );
+    // float3 rotated;
+    // rotated.x = transform[0].x * translated.x + transform[0].y * translated.y + transform[0].z * translated.z + transform[0].w;
+    // rotated.y = transform[1].x * translated.x + transform[1].y * translated.y + transform[1].z * translated.z + transform[1].w;
+    // rotated.z = transform[2].x * translated.x + transform[2].y * translated.y + transform[2].z * translated.z + transform[2].w;
 
     
     // Scale the point
@@ -201,12 +201,12 @@ extern "C" __global__ void __closesthit__ch()
     float3 intersection_point_w = raytime * ray_direction + ray_origin;
    
     float3 center = make_float3(0.0f, 0.0f, 0.0f);
-    float3 scale = make_float3(0.5f, 0.5f, 0.5f);
-    float4 quaternion = make_float4(0.3f, 0.5f, 0.2f, 1.0f);
+    float3 scale = make_float3(.5f, 0.5f, 0.5f);
+    float4 quaternion = make_float4(0.0f, 0.0f, 0.0f, 1.0f);
     
     
     
-    if (in_ellipsoid(intersection_point_w, center, scale, transform)) {
+    if (in_ellipsoid(intersection_point_w, center, scale, quaternion)) {
         optixSetPayload_0(__float_as_int(1.0f));
     } else {
         optixSetPayload_0(__float_as_int(0.3f));

@@ -104,24 +104,7 @@ lookat = pygame.math.Vector3(0, 0, 0)
 up = pygame.math.Vector3(0, 1, 0)
 camera_position = camera.get_position()
 
-# a = get_image(width, height, camera_position, lookat, up)
-# Display the image
-# im = ax.imshow(a)
-# fig.canvas.draw()
 
-# # Define a callback function to update the image
-# def on_key(event):
-#     global zoom, a
-#     print('press', event.key)
-#     sys.stdout.flush()
-#     # Get the x, y coordinates of the click
-#     if event.key == 'up':
-#     if event.key == 'down':
-#         a = get_image(width, height, 0.0, 0.0, zoom)  # Set the entire image to red
-#         im.set_data(a)
-#         fig.canvas.draw()
-#         print(zoom)
-#         sys.stdout.flush()
 
 window = pygame.display.set_mode((width, height))
 
@@ -129,6 +112,7 @@ window = pygame.display.set_mode((width, height))
 pygame.display.set_caption('Pygame Window')
 # Main loop
 running = True
+i = 0
 state = OptixState()
 while running:
     for event in pygame.event.get():
@@ -150,6 +134,7 @@ while running:
     pygame.display.flip()
 
     clock.tick()
+    
 
 # Quit Pygame
 pygame.quit()

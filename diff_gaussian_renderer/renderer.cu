@@ -38,20 +38,6 @@ typedef SbtRecord<RayGenData>   RayGenSbtRecord;
 typedef SbtRecord<MissData>     MissSbtRecord;
 typedef SbtRecord<HitGroupData> HitGroupSbtRecord;
 
-// std::vector<torch::Tensor> render_gaussians(
-//     const torch::Tensor& means,
-//     const torch::Tensor& scales,
-//     const torch::Tensor& rotations,
-//     const torch::Tensor& colors,
-//     const torch::Tensor& opacity,
-//     const float tan_fovx,
-//     const int image_height,
-//     const int image_width,
-//     const torch::Tensor& cam_pos
-// ) {
-
-    
-// }
 #define OPTIX_CHECK(error)                                                     \
   {                                                                            \
     if (error != OPTIX_SUCCESS)                                                \
@@ -60,11 +46,12 @@ typedef SbtRecord<HitGroupData> HitGroupSbtRecord;
   }
 
 #define CUDA_CHECK(error)                                                      \
-  {                                                                            \
+{                                                                            \
     if (error != cudaSuccess)                                                  \
       std::cerr << __FILE__ << ":" << __LINE__ << " CUDA Error: '"             \
                 << cudaGetErrorString(error) << "'\n";                         \
-  }
+}
+
 void optixLogCallback(unsigned int level, const char *tag, const char *message,
                       void *cbdata) {
   std::cout << "Optix Log[" << level << "][" << tag << "]: '" << message
