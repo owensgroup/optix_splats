@@ -3,13 +3,13 @@ import numpy as np
 import torch
 
 
-ply_path = 'example.ply'
+ply_path = 'test/example.ply'
 
 ply_data = PlyData.read(ply_path)
 # Assuming 'ply_data' is already read from a PLY file and contains elements
 first_element = ply_data.elements[0]
 properties_lists = {prop.name: np.array(first_element.data[prop.name]) for prop in first_element.properties}
-
+print(properties_lists.keys())
 x = properties_lists['x']
 y = properties_lists['y']
 z = properties_lists['z']
