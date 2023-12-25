@@ -83,22 +83,25 @@ class OptixState {
 public:
 
     // Constructors
-    OptixState() {
+    OptixState(int width, int height) {
         std::cout << "Creating optix context" << std::endl;
         init_context();
 
         std::cout << "Building gas" << std::endl;
         build_gas();
 
-        std::cout << "Building ias" << std::endl;
-        build_ias();
+        // std::cout << "Building ias" << std::endl;
+        // build_ias();
 
         std::cout << "Building module" << std::endl;
         build_module();
 
+        // set image width and height
+        image_width = width;
+        image_height = height;
         std::cout << "Building pipeline and sbt" << std::endl;
         // TODO: Change image width and height to be passed in
-        build_pipeline_and_sbt(2560, 1440);
+        build_pipeline_and_sbt(width, height);
 
         
     }
@@ -111,27 +114,47 @@ public:
 
     // Functions
     // TODO: Refactor to build gaussians around multiple gaussians
-    void build_ias() {
-        OptixInstance instance = {};
-        float transform[12] = {0.7071,-0.7071,0.0,0,0.7071,0.7071,0.0 ,0,0.0,0.0,1.0,0};
-        memcpy( instance.transform, transform, sizeof( float )*12 );
-        instance.instanceId = 0;
-        instance.visibilityMask = 255;
-        instance.sbtOffset = 0;
-        instance.flags = OPTIX_INSTANCE_FLAG_NONE;
-        instance.traversableHandle = gas_handle;
+    void build_ias(torch::Tensor means, torch::Tensor scales, torch::Tensor rotations) {
+        int num_gaussians = means.size(0);
+        std::cout << "Number of gaussians: " << num_gaussians << std::endl;
+        std::vector<OptixInstance> instances;
+        for(int i = 0; i < num_gaussians; i++) {
+            OptixInstance instance = {};
+            torch::Tensor q = rotations.select(0, i);
+            float4 quaternion = make_float4(q[0].item<float>(), q[1].item<float>(), q[2].item<float>(), q[3].item<float>());
+            float transform[12];
+            transform[0] = 1.0f - 2.0f * (quaternion.y * quaternion.y + quaternion.z * quaternion.z);
+            transform[1] = 2.0f * (quaternion.x * quaternion.y - quaternion.z * quaternion.w);
+            transform[2] = 2.0f * (quaternion.x * quaternion.z + quaternion.y * quaternion.w);
 
-        CUdeviceptr d_instance;
-        cudaMalloc( (void**) &d_instance, sizeof( OptixInstance ) );
-        cudaMemcpy( (void*)d_instance, &instance, 
-            sizeof( OptixInstance ), cudaMemcpyHostToDevice );
+            transform[4] = 2.0f * (quaternion.x * quaternion.y + quaternion.z * quaternion.w);
+            transform[5] = 1.0f - 2.0f * (quaternion.x * quaternion.x + quaternion.z * quaternion.z);
+            transform[6] = 2.0f * (quaternion.y * quaternion.z - quaternion.x * quaternion.w);
+
+            transform[8] = 2.0f * (quaternion.x * quaternion.z - quaternion.y * quaternion.w);
+            transform[9] = 2.0f * (quaternion.y * quaternion.z + quaternion.x * quaternion.w);
+            transform[10] = 1.0f - 2.0f * (quaternion.x * quaternion.x + quaternion.y * quaternion.y);
+            memcpy(instance.transform, transform, sizeof(float) * 12);
+            instance.instanceId = i;
+            instance.visibilityMask = 255;
+            instance.sbtOffset = 0;
+            instance.flags = OPTIX_INSTANCE_FLAG_NONE;
+            instance.traversableHandle = gas_handle;
+            instances.push_back(instance);
+        }
+        
+
+        CUdeviceptr d_instances;
+        cudaMalloc((void**) &d_instances, sizeof(OptixInstance) * num_gaussians);
+        cudaMemcpy((void*)d_instances, instances.data(), 
+            sizeof(OptixInstance) * num_gaussians, cudaMemcpyHostToDevice);
 
         // Reset build input and bufferSizes
         OptixBuildInput buildInput = {};
         buildInput.type = OPTIX_BUILD_INPUT_TYPE_INSTANCES;
         OptixBuildInputInstanceArray& instanceArray = buildInput.instanceArray;
-        instanceArray.instances = d_instance;
-        instanceArray.numInstances = 1;
+        instanceArray.instances = d_instances;
+        instanceArray.numInstances = num_gaussians;
         
         cudaStream_t streamDefault  = 0;
         OptixAccelBuildOptions accelOptions = {};
@@ -182,6 +205,8 @@ public:
     OptixPipeline pipeline;
 
     CUdeviceptr d_image;
+    int image_width;
+    int image_height;
 
 private:
     void init_context() {
@@ -439,8 +464,7 @@ private:
 };
 
 
-torch::Tensor render_gaussians(int image_height, int image_width,
-                               float camera_x, float camera_y, float camera_z,
+torch::Tensor render_gaussians(float camera_x, float camera_y, float camera_z,
                                float lookat_x, float lookat_y, float lookat_z,
                                float up_x, float up_y, float up_z,
                             //    float means_x, float means_y, float means_z,
@@ -451,9 +475,11 @@ torch::Tensor render_gaussians(int image_height, int image_width,
     
     
 
-    std::cout << "Making image tensor height " << image_height << " width " << image_width << std::endl;
+    // std::cout << "Making image tensor height " << image_height << " width " << image_width << std::endl;
     // create torch tensor with size of image_height x image_width x 3 
-    
+    int image_height = state.image_height;
+    int image_width = state.image_width;
+
     OptixDeviceContext context = state.context;
 
     OptixTraversableHandle instanceHandle = state.instanceHandle;
@@ -513,7 +539,8 @@ torch::Tensor render_gaussians(int image_height, int image_width,
 
 PYBIND11_MODULE(DiffGaussianRenderer, m) {
     py::class_<OptixState>(m, "OptixState")
-        .def(py::init<>());
+        .def(py::init<int, int>())
+        .def("build_ias", &OptixState::build_ias);
 
     m.def("render_gaussians", &render_gaussians, "Render gaussians");
 }

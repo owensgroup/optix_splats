@@ -2,6 +2,7 @@ import torch
 from diff_gaussian_renderer import render_gaussians, OptixState
 import matplotlib.pyplot as plt
 import torchvision.transforms as transforms
+from plyfile import PlyData
 
 import numpy as np
 import sys
@@ -40,15 +41,14 @@ def pil_image_to_pygame(pil_image):
     return pygame.image.fromstring(image_string, (width, height), 'RGBA')
 
 state = None
-def get_image(image_width, image_height, camera_position,
+def get_image(camera_position,
               lookat, up, state):
     
     # if state is None:
     #     print("CREATING STATE")
     #     state = create_state()
     render_start_time = time.time()
-    a = render_gaussians(image_height, image_width, camera_position.x, camera_position.y, camera_position.z,
-                         lookat.x, lookat.y, lookat.z, up.x, up.y, up.z, state)
+    a = render_gaussians(camera_position.x, camera_position.y, camera_position.z, lookat.x, lookat.y, lookat.z, up.x, up.y, up.z, state)
     r = ((a >> 24) & 0xFF).byte()
     g = ((a >> 16) & 0xFF).byte()
     b = ((a >> 8) & 0xFF).byte()
@@ -59,7 +59,7 @@ def get_image(image_width, image_height, camera_position,
     a = a[..., [2, 1, 0, 3]]
 
     render_end_time = time.time()
-    # print("RENDER TIME: ", render_end_time - render_start_time)
+    print("RENDER TIME: ", render_end_time - render_start_time)
 
     a = a.to('cpu')
     # get the first 3 channels of a
@@ -113,14 +113,41 @@ pygame.display.set_caption('Pygame Window')
 # Main loop
 running = True
 i = 0
-state = OptixState()
+ply_path = 'test/example.ply'
+
+ply_data = PlyData.read(ply_path)
+# Assuming 'ply_data' is already read from a PLY file and contains elements
+first_element = ply_data.elements[0]
+properties_lists = {prop.name: np.array(first_element.data[prop.name]) for prop in first_element.properties}
+print(properties_lists.keys())
+x = properties_lists['x']
+y = properties_lists['y']
+z = properties_lists['z']
+
+opacity = properties_lists['opacity']
+
+scale_x = properties_lists['scale_0']
+scale_y = properties_lists['scale_1']
+scale_z = properties_lists['scale_2']
+
+a = properties_lists['rot_0']
+b = properties_lists['rot_1']
+c = properties_lists['rot_2']
+d = properties_lists['rot_3']
+
+means = torch.from_numpy(np.column_stack((x, y, z)))
+scales = torch.from_numpy(np.column_stack((scale_x, scale_y, scale_z)))
+rotations = torch.from_numpy(np.column_stack((a, b, c, d)))
+
+state = OptixState(width, height)
+state.build_ias(means, scales, rotations)
 while running:
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
         camera.handle_input(event)
     get_image_start = time.time()
-    a = get_image(width, height, camera.get_position(), lookat, up, state)
+    a = get_image(camera.get_position(), lookat, up, state)
     get_image_end = time.time()
 
     window.fill((0, 0, 0))

@@ -1,7 +1,7 @@
 from plyfile import PlyData
 import numpy as np
 import torch
-
+from diff_gaussian_renderer import render_gaussians, OptixState
 
 ply_path = 'test/example.ply'
 
@@ -29,3 +29,15 @@ means = np.column_stack((x, y, z))
 scales = np.column_stack((scale_x, scale_y, scale_z))
 rotations = np.column_stack((a, b, c, d))
 
+means = torch.tensor([0,0,0])
+scales = torch.tensor([0.5,0.5,0.5])
+rotations = torch.tensor([0,0,0,1])
+# res = torch.cuda.mem_get_info()
+# print(res[0], res[1])
+means = torch.from_numpy(means).to('cuda')
+scales = torch.from_numpy(scales).to('cuda')
+rotations = torch.from_numpy(rotations).to('cuda')
+state = OptixState(2560, 1440)
+
+# res = torch.cuda.mem_get_info()
+# print(res[0], res[1])
